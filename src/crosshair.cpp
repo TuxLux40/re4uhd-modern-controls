@@ -33,8 +33,10 @@ static void __fastcall HookLaser(uintptr_t self, void* edx, char draw, char b, c
 // every frame) holds at +0 the camera-to-world matrix (GX 3x4: rotation columns, eye in the last column; the camera
 // looks down -Z, roll included) and its field of view at +0xC0. The game projects with
 // MTXPerspective(fovy, *kProjAspect) and stretches that to the full screen width, so the horizontal scale comes from
-// that aspect (4:3 by default), not from the screen's. Returns NDC (-1..1, y up).
-static bool ProjectLaserEnd(float* ndcX, float* ndcY) {
+// that aspect (4:3 by default), not from the screen's. The height is cropped to the screen's shape instead: a 16:9
+// screen shows the 4:3 width of view and 3/4 of its height (measured: off by exactly that factor otherwise).
+// Returns NDC (-1..1, y up).
+static bool ProjectLaserEnd(float screenAspect, float* ndcX, float* ndcY) {
     const uintptr_t cam = Va(kCamCtrl) + cc::Camera;
     const float* m = (const float*)cam;
     const float fovy = At<float>(cam, 0xC0);
@@ -49,11 +51,11 @@ static bool ProjectLaserEnd(float* ndcX, float* ndcY) {
     if (!(-z > 10.0f)) return false;
     const float t = tanf(fovy * 0.5f * 0.01745329252f);
     *ndcX = x / (-z * t * aspect);
-    *ndcY = y / (-z * t);
+    *ndcY = y / (-z * t * aspect / screenAspect);
     static bool logged = false;
     if (!logged) {
         logged = true;
-        Log("crosshair: fovy %.1f aspect %.3f -> ndc %.3f %.3f", fovy, aspect, *ndcX, *ndcY);
+        Log("crosshair: fovy %.1f aspect %.3f screen %.3f -> ndc %.3f %.3f", fovy, aspect, screenAspect, *ndcX, *ndcY);
     }
     return true;
 }
@@ -69,8 +71,9 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
     const float dt = last.QuadPart ? (float)(now.QuadPart - last.QuadPart) / (float)freq.QuadPart : 0.0f;
     last = now;
 
+    static float screenAspect = 16.0f / 9.0f;  // from the back buffer, below
     float nx, ny;
-    if (GetTickCount() - g_laserTick > 100 || !ProjectLaserEnd(&nx, &ny)) {
+    if (GetTickCount() - g_laserTick > 100 || !ProjectLaserEnd(screenAspect, &nx, &ny)) {
         visible = false;
         return;
     }
@@ -98,6 +101,7 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
     dev->SetRenderTarget(0, bb);
 
     const float w = (float)desc.Width, h = (float)desc.Height;
+    if (w > 0.0f && h > 0.0f) screenAspect = w / h;
     {
         // Remake-style reticle (RE2/RE3/RE4 2019-2023): a small centre dot and four short ticks around it.
         const LONG cx = (LONG)((sx * 0.5f + 0.5f) * w);
