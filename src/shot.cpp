@@ -54,12 +54,32 @@ static float Normalize(float* v) {
 }
 
 // Cast the camera's centre line, starting level with the muzzle so nothing between the camera and Leon counts.
+// The view as rendered (CameraControl::Camera_60: camera-to-world, eye in the last column, looking down -Z). The game
+// eases it after the camera hook, so while turning it trails the camera the hook computed; the crosshair is drawn in
+// this one.
+static bool RenderView(float* eye, float* dir) {
+    const float* m = (const float*)(Va(kCamCtrl) + cc::Camera);
+    eye[0] = m[3], eye[1] = m[7], eye[2] = m[11];
+    dir[0] = -m[2], dir[1] = -m[6], dir[2] = -m[10];
+    return Normalize(dir) > 0.5f;
+}
+
+static float g_lastViewDiff = 0.0f;  // measurement: yaw of the rendered view minus the hook's view (degrees)
+
 static bool CastTarget(const float* muzzle) {
     if (!g_lineHit || !Cfg().centeredAim || !AimCentered() || GetTickCount() - g_viewTick > 100) return false;
-    const float m[3] = {muzzle[0] - g_viewEye[0], muzzle[1] - g_viewEye[1], muzzle[2] - g_viewEye[2]};
-    const float t0 = fmaxf(0.0f, Dot(m, g_viewDir));
+    float eye[3], dir[3];
+    if (!RenderView(eye, dir)) return false;
+    {
+        float d = atan2f(dir[0], dir[2]) - atan2f(g_viewDir[0], g_viewDir[2]);
+        while (d > 3.14159265f) d -= 6.2831853f;
+        while (d < -3.14159265f) d += 6.2831853f;
+        g_lastViewDiff = d * 57.3f;
+    }
+    const float m[3] = {muzzle[0] - eye[0], muzzle[1] - eye[1], muzzle[2] - eye[2]};
+    const float t0 = fmaxf(0.0f, Dot(m, dir));
     float from[3], to[3];
-    for (int i = 0; i < 3; ++i) from[i] = g_viewEye[i] + g_viewDir[i] * t0, to[i] = g_viewEye[i] + g_viewDir[i] * 40000.0f;
+    for (int i = 0; i < 3; ++i) from[i] = eye[i] + dir[i] * t0, to[i] = eye[i] + dir[i] * 40000.0f;
     int em = 0, poly = 0;
     g_lineHit(from, to, 0, 0, &em, &poly);
     for (int i = 0; i < 3; ++i) g_target[i] = to[i];
@@ -111,8 +131,9 @@ static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, fl
     if (diag) {
         float w[3] = {g_target[0] - start[0], g_target[1] - start[1], g_target[2] - start[2]};
         const float wl = Normalize(w);
-        Log("laser: %s gun %.1f -> target %.1f (%.2f deg, target %.0f away) len %.0f", ok ? "turned" : "LEFT",
-            atan2f(dir[0], dir[2]) * 57.3f, atan2f(w[0], w[2]) * 57.3f, acosf(fminf(1.0f, Dot(dir, w))) * 57.3f, wl, len);
+        Log("laser: %s gun %.1f -> target %.1f (%.2f deg, target %.0f away) len %.0f, rendered view %+.2f deg off",
+            ok ? "turned" : "LEFT",
+            atan2f(dir[0], dir[2]) * 57.3f, atan2f(w[0], w[2]) * 57.3f, acosf(fminf(1.0f, Dot(dir, w))) * 57.3f, wl, len, g_lastViewDiff);
     }
     if (!ok) return;
     for (int i = 0; i < 3; ++i) end[i] = start[i] + nd[i] * len;
