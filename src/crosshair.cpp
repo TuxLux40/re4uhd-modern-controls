@@ -36,13 +36,41 @@ static void __fastcall HookLaser(uintptr_t self, void* edx, char draw, char b, c
 // that aspect (4:3 by default), not from the screen's. The height is cropped to the screen's shape instead: a 16:9
 // screen shows the 4:3 width of view and 3/4 of its height (measured: off by exactly that factor otherwise).
 // Returns NDC (-1..1, y up).
+// The point the reticle marks: along the laser, at a smoothed distance. The laser's own end jumps between the head and
+// the wall behind it whenever it slips off a target; that would throw the reticle along the laser's line on screen.
+// The distance eases instead: quickly onto nearer hits, slowly out to far ones.
+static float g_depth = -1.0f;
+static DWORD g_depthTick = 0;
+static void AimPoint(float* out) {
+    const float* s = (const float*)Va(kLaserStart);
+    const float* e = (const float*)Va(kLaserEnd);
+    const float dx = e[0] - s[0], dy = e[1] - s[1], dz = e[2] - s[2];
+    const float len = sqrtf(dx * dx + dy * dy + dz * dz);
+    const DWORD now = GetTickCount();
+    const float dt = (now - g_depthTick) / 1000.0f;
+    g_depthTick = now;
+    if (len < 1.0f) {
+        out[0] = e[0], out[1] = e[1], out[2] = e[2];
+        return;
+    }
+    if (g_depth < 0.0f || dt > 0.2f) {
+        g_depth = len;
+    } else {
+        const float tau = len < g_depth ? 0.08f : 0.5f;
+        g_depth *= expf(logf(len / g_depth) * (1.0f - expf(-dt / tau)));  // eases in log space: 5 m and 50 m alike
+    }
+    const float k = g_depth / len;
+    out[0] = s[0] + dx * k, out[1] = s[1] + dy * k, out[2] = s[2] + dz * k;
+}
+
 static bool ProjectLaserEnd(float screenAspect, float* ndcX, float* ndcY) {
     const uintptr_t cam = Va(kCamCtrl) + cc::Camera;
     const float* m = (const float*)cam;
     const float fovy = At<float>(cam, 0xC0);
     const float aspect = At<float>(Va(kProjAspect), 0);
     if (!(fovy > 1.0f && fovy < 170.0f) || !(aspect > 0.5f && aspect < 8.0f)) return false;
-    const float* p = (const float*)Va(kLaserEnd);
+    float p[3];
+    AimPoint(p);
     const float d[3] = {p[0] - m[3], p[1] - m[7], p[2] - m[11]};
     // camera space = R^T * d (columns of R are the camera axes in world space)
     const float x = m[0] * d[0] + m[4] * d[1] + m[8] * d[2];
