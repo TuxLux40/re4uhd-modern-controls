@@ -47,7 +47,6 @@ static volatile float g_yaw = 0.0f;  // world yaw the free camera looks along
 static float g_pitch = 0.0f;         // radians on top of the game's own camera pitch
 static float g_appliedDefaultPitch = 0.0f;  // Config::defaultPitch that g_pitch currently includes
 static float g_stickIdle = 0.0f;             // seconds since the right stick last turned the camera
-static bool g_stickLatched = false;          // after an aim: ignore the right stick until it returns to centre
 static float g_modBlend = 1.0f;              // how much of the free camera's tilt and height applies (0..1)
 static float g_room = -1.0f;                 // smoothed share of the camera distance free of walls (-1 = start over)
 static bool g_haveYaw = false;
@@ -275,11 +274,14 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             RotatePitch(eye, pivot, sinf(gameYaw), cosf(gameYaw), cosf(pitch), sinf(pitch));
             RotatePitch(tgt, pivot, sinf(gameYaw), cosf(gameYaw), cosf(pitch), sinf(pitch));
         }
-        g_stickLatched = true;  // the stick still holds the aim when the aim ends; don't let it swing the camera
         g_yaw = gameYaw;
         g_view = VIEW_AIM;
         const float ax = g_aimMoveX, ay = g_aimMoveY;
-        if (cfg.aimWalk && (ax != 0.0f || ay != 0.0f)) {
+        // Only while Leon is actually in his aim or knife stance (r_no_0 0, r_no_1 6 / 0xB): a hit or stagger with the
+        // aim button still held must not slide him around.
+        const uint8_t r0 = At<uint8_t>(pl, pl::RNo0), r1 = At<uint8_t>(pl, pl::RNo0 + 1);
+        const bool stance = r0 == 0 && (r1 == 6 || r1 == 0xB);
+        if (cfg.aimWalk && stance && (ax != 0.0f || ay != 0.0f)) {
             // Relative to the aim camera: stick up walks where the camera looks.
             float mag = sqrtf(ax * ax + ay * ay);
             if (mag > 1.0f) mag = 1.0f;
@@ -307,8 +309,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     }
     g_wasMoving = g_moving;
 
-    if (g_stickLatched && g_stickRx == 0.0f && g_stickRy == 0.0f) g_stickLatched = false;
-    const float stickX = g_stickLatched ? 0.0f : g_stickRx, stickY = g_stickLatched ? 0.0f : g_stickRy;
+    const float stickX = g_stickRx, stickY = g_stickRy;
     g_yaw = WrapPi(g_yaw - stickX * cfg.yawSpeed * dt);
     // Auto-follow: while Leon moves and the right stick rests, ease the camera round to where the original camera
     // would be. Slower for small differences, so it settles
