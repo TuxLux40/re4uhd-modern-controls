@@ -38,6 +38,9 @@ constexpr uint32_t kFnLaser = 0x0033EA60;
 constexpr uint8_t kSigLaser[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x1C, 0xA1};
 constexpr uint32_t kLaserStart = 0x00879818;  // Vec
 constexpr uint32_t kLaserEnd = 0x00879828;    // Vec
+// The game's projection: MTXPerspective(CAMERA fovy (+0xC0, degrees), *kProjAspect, ...) at 0x006F0053. The aspect is
+// 4:3 (1.333) even at 16:9; the image is stretched to the full width. re4_tweaks rewrites it for ultrawide.
+constexpr uint32_t kProjAspect = 0x0071377C;  // float
 
 // JOY Joy[4] (re4_tweaks SDK/pad.h); the weapon aim (PlWepLockCtrl, 0x00688090) reads Joy[0]'s left stick and on bits.
 // KeyConvert fills it from the pad device (0x00964670(0): floats +0xC/+0x10 left stick, +0x14/+0x18 right stick,
