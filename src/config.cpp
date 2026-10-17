@@ -21,6 +21,12 @@ static const char kDefaultIni[] =
     "; Degrees per second Leon turns toward the stick direction\r\n"
     "TurnSpeed=515\r\n"
     "\r\n"
+    "[Aim]\r\n"
+    "; 1 = while aiming the left stick walks (Leon glides, there are no strafe animations) and the right stick aims\r\n"
+    "Walk=1\r\n"
+    "; Game units per second at full deflection (Leon walks about 1500)\r\n"
+    "WalkSpeed=900\r\n"
+    "\r\n"
     "[Camera]\r\n"
     "; Where the camera rests vertically, in degrees relative to the game's camera (+ = higher, looking down)\r\n"
     "DefaultPitch=12\r\n"
@@ -64,6 +70,8 @@ void LoadConfig() {
     c.run = !lstrcmpiA(run, "Button") ? RUN_BUTTON : !lstrcmpiA(run, "OuterRing") ? RUN_OUTER_RING : RUN_ALWAYS;
     c.outerRing = ReadFloat(path, "Movement", "OuterRing", 0.85f);
     c.turnSpeed = ReadFloat(path, "Movement", "TurnSpeed", 515.0f) * kDeg;
+    c.aimWalk = ReadFloat(path, "Aim", "Walk", 1.0f) != 0.0f;
+    c.aimWalkSpeed = ReadFloat(path, "Aim", "WalkSpeed", 900.0f);
     c.defaultPitch = ReadFloat(path, "Camera", "DefaultPitch", 12.0f) * kDeg;
     c.height = ReadFloat(path, "Camera", "Height", 250.0f);
     c.yawSpeed = ReadFloat(path, "Camera", "YawSpeed", 170.0f) * kDeg;
@@ -71,6 +79,7 @@ void LoadConfig() {
     c.invertX = ReadFloat(path, "Camera", "InvertX", 0.0f) != 0.0f;
     c.invertY = ReadFloat(path, "Camera", "InvertY", 0.0f) != 0.0f;
     g_cfg = c;
+    Log("config: aim walk %d speed %.0f", c.aimWalk, c.aimWalkSpeed);
     Log("config: run %d outer %.2f turn %.2f rad/s | cam pitch %.3f height %.0f yaw %.2f pitch %.2f rad/s inv %d%d",
         c.run, c.outerRing, c.turnSpeed, c.defaultPitch, c.height, c.yawSpeed, c.pitchSpeed, c.invertX, c.invertY);
 }

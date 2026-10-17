@@ -14,8 +14,10 @@
 // Leon toward that yaw every frame. After the game converts the pad to action bits (KeyConvert), the run bit is set
 // or cleared according to Config::run.
 //
-// While aiming the game's own aim camera and tank aim run untouched. Aiming starts by turning Leon by the current yaw
-// offset, so he faces where the free camera looked; the free camera follows the game's yaw until the aim ends.
+// While aiming the game's own aim camera runs. Aiming starts by turning Leon by the current yaw offset, so he faces
+// where the free camera looked; the free camera follows the game's yaw until the aim ends. With Config::aimWalk the
+// pad thread hands the game the right stick as its left stick (so the right stick aims) and keeps the left stick to
+// walk: the camera hook moves Leon's position along it, relative to the aim camera, with no animation (he glides).
 #include "common.h"
 #include "re4.h"
 #include "camera.h"
@@ -37,6 +39,7 @@ static volatile float g_stickRx = 0.0f, g_stickRy = 0.0f;  // right stick, -1..1
 static volatile float g_moveYaw = 0.0f;                     // world yaw Leon should face
 static volatile float g_moveMag = 0.0f;                     // left stick deflection 0..1
 static volatile bool g_moving = false;
+static volatile float g_aimMoveX = 0.0f, g_aimMoveY = 0.0f;  // left stick while aiming (aim walk)
 
 // Camera state (game thread).
 static volatile float g_yaw = 0.0f;  // world yaw the free camera looks along
@@ -45,11 +48,14 @@ static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
 static bool g_wasMoving = false;
-static volatile bool g_active = false;  // the free camera drew the last gameplay frame
+enum View { VIEW_NONE, VIEW_FREE, VIEW_AIM };
+static volatile int g_view = VIEW_NONE;  // what the camera hook did on the last gameplay frame
 
 // Gameplay only: the camera hook ran within the last 100 ms (menus, the inventory and the merchant freeze the world,
 // so the pad there is left alone).
-bool FreeCameraActive() { return g_active && GetTickCount() - g_lastFrameTick < 100; }
+static bool Fresh() { return GetTickCount() - g_lastFrameTick < 100; }
+bool FreeCameraActive() { return g_view == VIEW_FREE && Fresh(); }
+static bool AimActive() { return g_view == VIEW_AIM && Fresh(); }
 
 static float DeadZone(float v, float dz) {
     return fabsf(v) < dz ? 0.0f : (v - copysignf(dz, v)) / (1.0f - dz);
@@ -65,16 +71,27 @@ void FreeCameraPad(XGamepad& pad) {
     const Config& c = Cfg();
     g_stickRx = DeadZone(pad.sThumbRX / 32767.0f, 0.2f) * (c.invertX ? -1.0f : 1.0f);
     g_stickRy = DeadZone(pad.sThumbRY / 32767.0f, 0.2f) * (c.invertY ? -1.0f : 1.0f);
+    g_aimMoveX = g_aimMoveY = 0.0f;
+    if (AimActive() || (FreeCameraActive() && Aiming())) {
+        g_moving = false;
+        if (c.aimWalk) {
+            const float ax = pad.sThumbLX / 32767.0f, ay = pad.sThumbLY / 32767.0f;
+            if (ax * ax + ay * ay >= 0.25f * 0.25f) {
+                g_aimMoveX = ax;
+                g_aimMoveY = ay;
+            }
+            pad.sThumbLX = pad.sThumbRX;  // the game aims with its left stick
+            pad.sThumbLY = pad.sThumbRY;
+            pad.sThumbRX = pad.sThumbRY = 0;
+        }
+        return;
+    }
     if (!FreeCameraActive()) {
         g_moving = false;
         return;
     }
     // The game's own right-stick look-around springs back and would fight the free camera.
     pad.sThumbRX = pad.sThumbRY = 0;
-    if (Aiming()) {
-        g_moving = false;
-        return;
-    }
     const float lx = pad.sThumbLX / 32767.0f, ly = pad.sThumbLY / 32767.0f;
     const float mag = sqrtf(lx * lx + ly * ly);
     if (mag < 0.25f) {
@@ -131,7 +148,7 @@ static PFN_QfpsMove g_origQfpsMove = nullptr;
 
 static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_origQfpsMove(self, edx);
-    g_active = false;
+    g_view = VIEW_NONE;
     const uintptr_t pl = Player();
     if (!pl) return;
     const Config& cfg = Cfg();
@@ -160,6 +177,18 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         }
         g_wasAiming = true;
         g_yaw = gameYaw;
+        g_view = VIEW_AIM;
+        const float ax = g_aimMoveX, ay = g_aimMoveY;
+        if (cfg.aimWalk && (ax != 0.0f || ay != 0.0f)) {
+            // Relative to the aim camera: stick up walks where the camera looks.
+            float mag = sqrtf(ax * ax + ay * ay);
+            if (mag > 1.0f) mag = 1.0f;
+            const float yaw = gameYaw - atan2f(ax, ay);
+            float* pos = (float*)(pl + pl::Pos);
+            const float stepLen = cfg.aimWalkSpeed * mag * dt;
+            pos[0] += sinf(yaw) * stepLen;
+            pos[2] += cosf(yaw) * stepLen;
+        }
         return;
     }
     g_wasAiming = false;
@@ -197,7 +226,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         tgt[1] += minEye - eye[1];
         eye[1] = minEye;
     }
-    g_active = true;
+    g_view = VIEW_FREE;
 }
 
 // KeyConvert: the game's per-frame pad -> KEY_BTN conversion (writes Key_btn_on). Afterwards the run bit follows

@@ -48,6 +48,8 @@ Saved changes apply while the game runs.
 | Movement | `Run` | `Always` | `Always`: Leon runs whenever the stick moves him, hold the game's run button to walk. `OuterRing`: run past `OuterRing` deflection. `Button`: vanilla run button. |
 | Movement | `OuterRing` | `0.85` | Stick deflection where `OuterRing` starts running |
 | Movement | `TurnSpeed` | `515` | Degrees per second Leon turns toward the stick |
+| Aim | `Walk` | `1` | While aiming, the left stick walks (Leon glides, RE4 has no strafe animations) and the right stick aims |
+| Aim | `WalkSpeed` | `900` | Aim-walk speed in game units per second (Leon walks about 1500) |
 | Camera | `DefaultPitch` | `12` | Resting camera angle in degrees above the game's (it starts here after every cutscene or door) |
 | Camera | `Height` | `250` | Raises the camera (game units) |
 | Camera | `YawSpeed` / `PitchSpeed` | `170` / `100` | Degrees per second at full right-stick deflection |

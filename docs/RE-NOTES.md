@@ -47,9 +47,9 @@ searching the disassembly for `mov ecx,<object>` followed by `call`.
 | Milestone | Goal | Status |
 |---|---|---|
 | M0 | Proxy loads under Proton, forwards XInput, logs the stick; read-only probe on `CameraControl::move` logs the camera mode | done 2026-10-17 (loads at base 0x400000; gameplay camera = mode 10) |
-| M1 | Free camera on the right stick: after `CameraQuasiFPS::move` (0x0059E130, mode 10) rotate the game's eye/target around Leon to our own yaw; aim hands back to the game camera | yaw works (oliver, 2026-10-17); free pitch + height offset added, untested |
-| M2 | Camera-relative movement: turn Leon toward camera yaw - stick angle, feed the game "forward" | works (oliver, 2026-10-17, with run forced via Steam Input); now `Run=Always` via `KEY_RUN` after KeyConvert |
-| M3 | Walk while aiming: move `pos_94` along the stick in the aim states, keep collision | |
+| M1 | Free camera on the right stick: after `CameraQuasiFPS::move` (0x0059E130, mode 10) rotate the game's eye/target around Leon to our own yaw; aim hands back to the game camera | yaw works (oliver, 2026-10-17); free pitch + height offset work (oliver, 2026-10-17) |
+| M2 | Camera-relative movement: turn Leon toward camera yaw - stick angle, feed the game "forward" | works (oliver, 2026-10-17, with run forced via Steam Input); `Run=Always` via `KEY_RUN` after KeyConvert works |
+| M3 | Walk while aiming: right stick goes to the game's aim (left stick slot), left stick moves `pos_94` relative to the aim camera | built, untested (collision unknown) |
 | M4 | Reload on the move, quick turn, button layout | |
 | M5 | In-game options menu entries: run default (Always / OuterRing / Button), free / default camera, modern / tank controls (the ini keeps working as the fallback) | planned |
 
