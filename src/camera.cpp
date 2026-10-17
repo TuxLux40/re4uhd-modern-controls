@@ -54,9 +54,12 @@ static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
 static int g_aimLogFrames = -1;              // frames until the aim-start check line is logged
-static float g_aimSeedTime = 0.0f;           // seconds left in which the vertical aim is held at the camera's tilt
 static int g_aimTraceFrames = 0;             // aim frames left to log the vertical aim (diagnostics)
-static float g_aimSeed = 0.0f;
+static float g_aimSeed = 0.0f;                // vertical aim the start eases into (-1..1, + = up)
+static float g_aimSeedFrom = 0.0f;
+static float g_aimSeedT = 1.0f;               // 0..1 progress of that ease
+static float g_freeEye[3], g_freeTgt[3];      // the free camera as last shown
+static bool g_haveFreeView = false;
 static float g_aimTilt = 0.0f;                // free-camera tilt still faded out on the aim camera (rad)
 static bool g_wasMoving = false;
 enum View { VIEW_NONE, VIEW_FREE, VIEW_AIM };
@@ -268,38 +271,57 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             // Turn Leon so the aim starts where the free camera looked.
             float* ang = (float*)(pl + pl::Ang);
             ang[1] = WrapPi(ang[1] + WrapPi(g_yaw - gameYaw));
-            // ...and tilted as far as the camera was tilted away from its resting angle (untouched camera: level).
-            // Vertical aim: -1..1, + = up (angle doubled when up, times 2/pi; the console game's look-to-aim math).
-            const float a = Clamp(-(g_pitch - cfg.defaultPitch), -1.4f, 0.75f);
+            // ...and tilted toward what the free camera was looking at: the point at the centre of its view (traced
+            // into the world), seen from Leon's gun. Vertical aim: -1..1, + = up; down 1 = 90 degrees, up 1 = 45
+            // (the console game's look-to-aim conversion doubles upward angles).
+            const float* lp = (const float*)(pl + pl::Pos);
+            float aimPitch = 0.0f;
+            if (g_haveFreeView) {
+                const float dx = g_freeTgt[0] - g_freeEye[0], dy = g_freeTgt[1] - g_freeEye[1],
+                            dz = g_freeTgt[2] - g_freeEye[2];
+                const float len = sqrtf(dx * dx + dy * dy + dz * dz);
+                if (len > 1.0f) {
+                    const float k = 20000.0f / len;
+                    const float farPt[3] = {g_freeEye[0] + dx * k, g_freeEye[1] + dy * k, g_freeEye[2] + dz * k};
+                    float hit[3] = {farPt[0], farPt[1], farPt[2]};
+                    if (!Trace(g_freeEye, farPt, hit, kTraceCamA, kTraceCamB)) hit[0] = farPt[0], hit[1] = farPt[1], hit[2] = farPt[2];
+                    const float gx = hit[0] - lp[0], gz = hit[2] - lp[2], gy = hit[1] - (lp[1] + 1200.0f);
+                    aimPitch = atan2f(gy, sqrtf(gx * gx + gz * gz));
+                }
+            }
+            const float a = Clamp(aimPitch, -1.2f, 0.7f);
             g_aimSeed = Clamp((a > 0.0f ? a + a : a) * 0.63661977f, -1.0f, 1.0f);
-            g_aimSeedTime = 0.05f;
-            g_aimTilt = g_pitch + a;  // the aim itself now looks down by -a; only the rest is extra camera tilt
+            g_aimSeedFrom = 0.0f;  // the gun comes up level; ease from there so the raise flows into the aim
+            g_aimSeedT = 0.0f;
+            g_aimTraceFrames = 50;
+            g_aimLogFrames = 45;
+            g_aimTilt = g_pitch;
             g_aimTraceFrames = 40;
             g_aimLogFrames = 20;
-            Log("cam: aim start, leon yaw -> %.3f, tilt %.2f -> vertical aim %.2f (was %.2f / %.2f, blend %.2f)", ang[1],
-                a, g_aimSeed, *(const float*)Va(kAimV), *(const float*)Va(kAimVStart), *(const float*)Va(kAimVBlend));
+            Log("cam: aim start, leon yaw -> %.3f, view pitch to target %.2f -> vertical aim %.2f (was %.2f / %.2f, "
+                "blend %.2f)", ang[1], a, g_aimSeed, *(const float*)Va(kAimV), *(const float*)Va(kAimVStart), *(const float*)Va(kAimVBlend));
         }
-        // The game settles its aim during the first frames; hold the seed until then (the stick adds on top later).
-        // While the gun comes up the game pulls the aim back toward level; hold it until the raise is over or the aim
-        // stick moves (Joy[0]'s left stick carries the aim stick while aiming).
-        if (g_aimSeedTime > 0.0f) {
+        // Ease the vertical aim from level to the target over 0.3 s while the gun comes up, unless the aim stick takes
+        // over (Joy[0]'s left stick carries the aim stick while aiming). The game's aim sway keeps the aim near an
+        // anchor angle ((cPlayer+0x7D8)->+0x28, radians) that only the stick moves, so the anchor is set with it.
+        if (g_aimSeedT < 1.0f) {
             const int jx = *(const int*)(Va(kJoy0) + joy::LX), jy = *(const int*)(Va(kJoy0) + joy::LY);
             if (jx != 0 || jy != 0) {
-                g_aimSeedTime = 0.0f;
+                g_aimSeedT = 1.0f;
             } else {
-                g_aimSeedTime -= dt;
-                *(float*)Va(kAimV) = g_aimSeed;
-                *(float*)Va(kAimVStart) = g_aimSeed;
-                // The aim sway (0x00684330) keeps the aim within a small range of an anchor angle in radians at
-                // (cPlayer+0x7D8)->+0x28 and only moves that anchor while the stick moves: set the anchor too.
+                g_aimSeedT = g_aimSeedT + dt / 0.3f < 1.0f ? g_aimSeedT + dt / 0.3f : 1.0f;
+                const float e = g_aimSeedT * g_aimSeedT * (3.0f - 2.0f * g_aimSeedT);
+                const float v = g_aimSeedFrom + (g_aimSeed - g_aimSeedFrom) * e;
+                *(float*)Va(kAimV) = v;
+                *(float*)Va(kAimVStart) = v;
                 const uintptr_t w = At<uintptr_t>(pl, 0x7D8);
-                if (w && Readable((void*)(w + 0x28), 4)) *(float*)(w + 0x28) = g_aimSeed * 1.5707963f;
+                if (w && Readable((void*)(w + 0x28), 4)) *(float*)(w + 0x28) = v * 1.5707963f;
             }
         }
         if (g_aimTraceFrames > 0) {
             --g_aimTraceFrames;
-            Log("aim: trace v %.3f p %.3f hold %.2f joy %d,%d", *(const float*)Va(kAimV), *(const float*)Va(kAimVStart),
-                g_aimSeedTime, *(const int*)(Va(kJoy0) + joy::LX), *(const int*)(Va(kJoy0) + joy::LY));
+            Log("aim: trace v %.3f p %.3f ease %.2f joy %d,%d", *(const float*)Va(kAimV), *(const float*)Va(kAimVStart),
+                g_aimSeedT, *(const int*)(Va(kJoy0) + joy::LX), *(const int*)(Va(kJoy0) + joy::LY));
         }
         g_wasAiming = true;
         // Fade the free camera's tilt out over 0.25 s instead of dropping it in one frame.
@@ -411,6 +433,8 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     }
     if (g_room < 1.0f)
         for (int i = 0; i < 3; ++i) eye[i] = shoulder[i] + (eye[i] - shoulder[i]) * g_room;
+    for (int i = 0; i < 3; ++i) g_freeEye[i] = eye[i], g_freeTgt[i] = tgt[i];
+    g_haveFreeView = true;
     g_view = VIEW_FREE;
 }
 
