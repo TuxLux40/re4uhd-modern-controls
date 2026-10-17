@@ -59,3 +59,4 @@ inline T& At(uintptr_t base, uint32_t off) { return *(T*)(base + off); }
 void RedirectGameXInputImports();
 // input.cpp: rewrites pad 0 before the game sees it.
 void TransformPad(DWORD user, XGamepad& pad);
+bool DebugInputActive();

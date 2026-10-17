@@ -24,6 +24,8 @@ static DebugStep g_steps[64];
 static int g_stepCount = 0, g_step = -1;
 static DWORD g_stepStart = 0, g_lastScriptCheck = 0;
 
+bool DebugInputActive() { return g_step >= 0; }
+
 static void DebugInput(XGamepad& pad) {
     const DWORD now = GetTickCount();
     if (g_step < 0 && now - g_lastScriptCheck >= 200) {

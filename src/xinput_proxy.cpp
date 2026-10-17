@@ -60,7 +60,14 @@ static void EnsureReal() { InitOnceExecuteOnce(&g_once, LoadReal, nullptr, nullp
 static DWORD GetStateCommon(PFN_GetState fn, DWORD user, XState* st) {
     EnsureReal();
     DWORD rc = fn ? fn(user, st) : ERROR_DEVICE_NOT_CONNECTED;
-    if (user == 0 && st && rc == ERROR_SUCCESS) TransformPad(user, st->Gamepad);
+    if (user == 0 && st && rc == ERROR_SUCCESS) {
+        TransformPad(user, st->Gamepad);
+        // A scripted debug pad changes state without the real pad's packet counter moving; games that only react to
+        // a new packet would miss it.
+        static DWORD extra = 0;
+        if (DebugInputActive()) ++extra;
+        st->dwPacketNumber += extra;
+    }
     return rc;
 }
 
