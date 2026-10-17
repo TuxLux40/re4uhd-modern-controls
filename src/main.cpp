@@ -46,9 +46,11 @@ static void LogExeIdentity() {
 }
 
 void InitGameHooks();
+void InitCrosshairHooks();
 
 static DWORD WINAPI InitThread(LPVOID) {
     if (MH_Initialize() != MH_OK) Log("MinHook init failed");
+    InitCrosshairHooks();  // first: it has to catch the game creating its D3D9 device
     RedirectGameXInputImports();
     InitGameHooks();
     return 0;

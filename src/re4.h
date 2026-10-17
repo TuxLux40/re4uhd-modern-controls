@@ -22,6 +22,22 @@ constexpr uint8_t kSigQfpsMove[] = {0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x9C, 0x01, 0x
 constexpr uint32_t kFnKeyConvert = 0x00567360;
 constexpr uint8_t kSigKeyConvert[] = {0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x7C, 0x05, 0x00, 0x00};  // sub esp,0x57C
 
+// Line-vs-world trace: thiscall bool Trace(const Vec* from, const Vec* to, Vec* hit, int, uint maskA, uint maskB),
+// ret 0x18; returns nonzero and writes the first hit point. ECX = a collision set: kCollWorld is the one Leon's
+// movement (masks 0, 0x800) and the game camera (masks 0x8000, 0) use; the laser uses 0x00BF9AA0 with 0, 0x400000.
+constexpr uint32_t kFnTrace = 0x00194160;
+constexpr uint8_t kSigTrace[] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x10, 0x56, 0x8B, 0x75, 0x14};
+constexpr uint32_t kCollWorld = 0x007F9A7C;
+constexpr uint32_t kTraceCamA = 0x8000, kTraceCamB = 0;   // the game camera's masks (0x006F69A9)
+constexpr uint32_t kTracePlA = 0, kTracePlB = 0x800;      // Leon's movement (0x00761FE0)
+
+// Laser sight: thiscall LaserUpdate(char draw, char, char) (0x0073EA60) computes the beam into kLaserStart/kLaserEnd
+// (the end is cut at the first hit) and draws it when `draw` is set.
+constexpr uint32_t kFnLaser = 0x0033EA60;
+constexpr uint8_t kSigLaser[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x1C, 0xA1};
+constexpr uint32_t kLaserStart = 0x00879818;  // Vec
+constexpr uint32_t kLaserEnd = 0x00879828;    // Vec
+
 // JOY Joy[4] (re4_tweaks SDK/pad.h); the weapon aim (PlWepLockCtrl, 0x00688090) reads Joy[0]'s left stick and on bits.
 // KeyConvert fills it from the pad device (0x00964670(0): floats +0xC/+0x10 left stick, +0x14/+0x18 right stick,
 // scaled to +-127, dead zone 31, then +-63). While a bound action such as aim is held it swaps the sticks: Joy left
@@ -53,7 +69,7 @@ constexpr uint32_t Motion = 0x1D8;  // MOTION_INFO; +0x40 Mot_attr (4 = no root 
 namespace cc {
 constexpr uint32_t Mode = 0x34;        // u8 r0: which camera runs this frame (switch in move())
 constexpr uint32_t Point = 0x38;       // CAMERA_POINT m_camera_38: Campos(0) Target(0xC) Roll(0x18) Fovy(0x1C)
-constexpr uint32_t Camera = 0x60;      // CAMERA Camera_60 (final view); CamPoint at +0xA4
+constexpr uint32_t Camera = 0x60;      // CAMERA Camera_60 (final view): Mtx view at +0 (3x4 rows), Mtx44 proj at +0x64
 constexpr uint32_t QuasiFPS = 0x278;   // CameraQuasiFPS
 constexpr uint32_t CameraPoint = 0xA4;  // CAMERA::CamPoint_A4 inside any CAMERA (QuasiFPS included)
 }  // namespace cc

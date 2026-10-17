@@ -85,8 +85,14 @@ void RedirectGameXInputImports() {
         auto* names = (const IMAGE_THUNK_DATA*)(base + (imp->OriginalFirstThunk ? imp->OriginalFirstThunk : imp->FirstThunk));
         auto* slots = (IMAGE_THUNK_DATA*)(base + imp->FirstThunk);
         for (; names->u1.AddressOfData; ++names, ++slots) {
-            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
-            const char* fn = (const char*)((const IMAGE_IMPORT_BY_NAME*)(base + names->u1.AddressOfData))->Name;
+            // bio4.exe imports XInput by ordinal (2 = XInputGetState, 4 = XInputGetCapabilities).
+            const char* fn;
+            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) {
+                const WORD ord = (WORD)IMAGE_ORDINAL(names->u1.Ordinal);
+                fn = ord == 2 ? "XInputGetState" : ord == 4 ? "XInputGetCapabilities" : "";
+            } else {
+                fn = (const char*)((const IMAGE_IMPORT_BY_NAME*)(base + names->u1.AddressOfData))->Name;
+            }
             void* target = nullptr;
             if (!lstrcmpA(fn, "XInputGetState")) target = (void*)Game_XInputGetState;
             else if (!lstrcmpA(fn, "XInputGetCapabilities")) target = (void*)Game_XInputGetCapabilities;

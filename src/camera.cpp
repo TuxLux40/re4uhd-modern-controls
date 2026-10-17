@@ -113,6 +113,51 @@ static uintptr_t Player() {
     return (p >= 0x10000 && Readable((void*)p, 0x200)) ? p : 0;
 }
 
+// The game's line-vs-world trace (re4.h kFnTrace) on the world collision set. Returns true and the hit point.
+typedef int(__fastcall* PFN_Trace)(uintptr_t self, void* edx, const float* from, const float* to, float* hit,
+                                   int unused, uint32_t maskA, uint32_t maskB);
+static PFN_Trace g_trace = nullptr;
+
+static bool Trace(const float* from, const float* to, float* hit, uint32_t maskA, uint32_t maskB) {
+    if (!g_trace) return false;
+    float end[3] = {to[0], to[1], to[2]};
+    return g_trace(Va(kCollWorld), nullptr, from, end, hit, 0, maskA, maskB) != 0;
+}
+
+// Aim walk: moves Leon by (dx, dz) unless a wall is in the way at knee height; slides along it when one axis is free.
+static void WalkWithCollision(float* pos, float dx, float dz) {
+    const float radius = 300.0f;  // keeps him off the wall
+    auto clear = [&](float mx, float mz) {
+        const float len = sqrtf(mx * mx + mz * mz);
+        if (len < 1e-3f) return false;
+        const float from[3] = {pos[0], pos[1] + 500.0f, pos[2]};
+        const float to[3] = {from[0] + mx + mx / len * radius, from[1], from[2] + mz + mz / len * radius};
+        float hit[3];
+        return !Trace(from, to, hit, kTracePlA, kTracePlB);
+    };
+    if (clear(dx, dz)) {
+        pos[0] += dx;
+        pos[2] += dz;
+    } else if (clear(dx, 0.0f)) {
+        pos[0] += dx;
+    } else if (clear(0.0f, dz)) {
+        pos[2] += dz;
+    }
+}
+
+// Keeps the camera in front of walls: traces from Leon's head to the eye and pulls the eye in to the first hit.
+static void CameraCollision(const float* pos, float* eye) {
+    const float head[3] = {pos[0], pos[1] + 1500.0f, pos[2]};
+    float hit[3];
+    if (!Trace(head, eye, hit, kTraceCamA, kTraceCamB)) return;
+    const float dx = head[0] - hit[0], dy = head[1] - hit[1], dz = head[2] - hit[2];
+    const float len = sqrtf(dx * dx + dy * dy + dz * dz);
+    const float back = len > 150.0f ? 150.0f / len : 1.0f;  // stay 150 units off the wall
+    eye[0] = hit[0] + dx * back;
+    eye[1] = hit[1] + dy * back;
+    eye[2] = hit[2] + dz * back;
+}
+
 // Seconds since the last frame (the game counts in 30 fps frames).
 static float DeltaSec() {
     const uintptr_t g = *(uintptr_t*)Va(kGlobalPtr);
@@ -187,8 +232,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             const float yaw = gameYaw - atan2f(ax, ay);
             float* pos = (float*)(pl + pl::Pos);
             const float stepLen = cfg.aimWalkSpeed * mag * dt;
-            pos[0] += sinf(yaw) * stepLen;
-            pos[2] += cosf(yaw) * stepLen;
+            WalkWithCollision(pos, sinf(yaw) * stepLen, cosf(yaw) * stepLen);
         }
         return;
     }
@@ -227,6 +271,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         tgt[1] += minEye - eye[1];
         eye[1] = minEye;
     }
+    CameraCollision(pos, eye);
     g_view = VIEW_FREE;
 }
 
@@ -265,6 +310,12 @@ static bool Hook(uint32_t rva, const uint8_t* sig, size_t n, void* detour, void*
 
 bool InitCameraHooks() {
     LoadConfig();
+    if (SafeEqual((void*)Va(kFnTrace), kSigTrace, sizeof(kSigTrace))) {
+        g_trace = (PFN_Trace)Va(kFnTrace);
+        Log("trace at %p", (void*)g_trace);
+    } else {
+        Log("trace: unexpected code at %p, no wall checks", (void*)Va(kFnTrace));
+    }
     const bool cam = Hook(kFnQfpsMove, kSigQfpsMove, sizeof(kSigQfpsMove), (void*)HookQfpsMove,
                           (void**)&g_origQfpsMove, "CameraQuasiFPS::move");
     Hook(kFnKeyConvert, kSigKeyConvert, sizeof(kSigKeyConvert), (void*)HookKeyConvert, (void**)&g_origKeyConvert,

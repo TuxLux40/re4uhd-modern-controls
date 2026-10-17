@@ -27,7 +27,7 @@ Left stick      Leon moves where you push it, relative to the camera
 Right stick     Free camera, stays where you leave it
 Aim             Leon turns to where the camera looks
   Left stick    walk while aiming
-  Right stick   aim
+  Right stick   aim (a crosshair marks where the laser points)
 
 UNINSTALL
 ---------

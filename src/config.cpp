@@ -9,34 +9,40 @@ static DWORD g_lastCheck = 0;
 
 const Config& Cfg() { return g_cfg; }
 
+// Every option is written commented out, so the defaults in the code apply (and improve with updates) until a
+// player uncomments a line on purpose.
 static const char kDefaultIni[] =
-    "; RE4 Modern Controls. Changes apply while the game runs (saved file is re-read within a second).\r\n"
+    "; RE4 Modern Controls settings. Everything works without touching this file.\r\n"
+    "; To change an option, remove the ';' in front of it and edit the value.\r\n"
+    "; Saved changes apply while the game runs.\r\n"
     "\r\n"
     "[Movement]\r\n"
-    "; Always   = Leon runs whenever the stick is pushed; hold the game's run button to walk\r\n"
+    "; Always    = Leon runs whenever the stick is pushed; hold the game's run button to walk\r\n"
     "; OuterRing = run when the stick is pushed past OuterRing, walk below it\r\n"
-    "; Button   = the game's own run button (vanilla)\r\n"
-    "Run=Always\r\n"
-    "OuterRing=0.85\r\n"
+    "; Button    = the game's own run button (vanilla)\r\n"
+    ";Run=Always\r\n"
+    ";OuterRing=0.85\r\n"
     "; Degrees per second Leon turns toward the stick direction\r\n"
-    "TurnSpeed=515\r\n"
+    ";TurnSpeed=515\r\n"
     "\r\n"
     "[Aim]\r\n"
-    "; 1 = while aiming the left stick walks (Leon glides, there are no strafe animations) and the right stick aims\r\n"
-    "Walk=1\r\n"
+    "; 1 = while aiming the left stick walks (Leon glides, there are no strafe animations)\r\n"
+    ";Walk=1\r\n"
     "; Game units per second at full deflection (Leon walks about 1500)\r\n"
-    "WalkSpeed=900\r\n"
+    ";WalkSpeed=1300\r\n"
+    "; 1 = crosshair where the laser points, in addition to the laser\r\n"
+    ";Crosshair=1\r\n"
     "\r\n"
     "[Camera]\r\n"
     "; Where the camera rests vertically, in degrees relative to the game's camera (+ = higher, looking down)\r\n"
-    "DefaultPitch=12\r\n"
+    ";DefaultPitch=12\r\n"
     "; Raises the whole camera (game units; Leon's shoulders are about 1500 above his feet)\r\n"
-    "Height=250\r\n"
+    ";Height=250\r\n"
     "; Degrees per second at full right-stick deflection\r\n"
-    "YawSpeed=170\r\n"
-    "PitchSpeed=100\r\n"
-    "InvertX=0\r\n"
-    "InvertY=0\r\n";
+    ";YawSpeed=170\r\n"
+    ";PitchSpeed=100\r\n"
+    ";InvertX=0\r\n"
+    ";InvertY=0\r\n";
 
 static void IniPath(char* out) { wsprintfA(out, "%sRE4ModernControls.ini", ModDir()); }
 
@@ -71,7 +77,8 @@ void LoadConfig() {
     c.outerRing = ReadFloat(path, "Movement", "OuterRing", 0.85f);
     c.turnSpeed = ReadFloat(path, "Movement", "TurnSpeed", 515.0f) * kDeg;
     c.aimWalk = ReadFloat(path, "Aim", "Walk", 1.0f) != 0.0f;
-    c.aimWalkSpeed = ReadFloat(path, "Aim", "WalkSpeed", 900.0f);
+    c.aimWalkSpeed = ReadFloat(path, "Aim", "WalkSpeed", 1300.0f);
+    c.crosshair = ReadFloat(path, "Aim", "Crosshair", 1.0f) != 0.0f;
     c.defaultPitch = ReadFloat(path, "Camera", "DefaultPitch", 12.0f) * kDeg;
     c.height = ReadFloat(path, "Camera", "Height", 250.0f);
     c.yawSpeed = ReadFloat(path, "Camera", "YawSpeed", 170.0f) * kDeg;
@@ -79,7 +86,7 @@ void LoadConfig() {
     c.invertX = ReadFloat(path, "Camera", "InvertX", 0.0f) != 0.0f;
     c.invertY = ReadFloat(path, "Camera", "InvertY", 0.0f) != 0.0f;
     g_cfg = c;
-    Log("config: aim walk %d speed %.0f", c.aimWalk, c.aimWalkSpeed);
+    Log("config: aim walk %d speed %.0f crosshair %d", c.aimWalk, c.aimWalkSpeed, c.crosshair);
     Log("config: run %d outer %.2f turn %.2f rad/s | cam pitch %.3f height %.0f yaw %.2f pitch %.2f rad/s inv %d%d",
         c.run, c.outerRing, c.turnSpeed, c.defaultPitch, c.height, c.yawSpeed, c.pitchSpeed, c.invertX, c.invertY);
 }

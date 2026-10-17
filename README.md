@@ -9,6 +9,9 @@ Modern controls for the original **Resident Evil 4** (2005, Steam). No more tank
 - **Aim where you look.** When you aim, Leon turns to face the camera's direction.
 - **Walk while aiming.** Move with the left stick while you aim with the right stick. RE4 has no strafe animations,
   so Leon glides.
+- **Crosshair.** A small crosshair marks where the laser points, so you can still see your aim when the laser is hard
+  to make out.
+- **Walls stop the camera.** The free camera stays in front of walls instead of looking through them.
 
 Made for a controller. Works on Windows and on Linux / Steam Deck (Proton).
 
@@ -62,7 +65,7 @@ turn speeds, run behaviour, switching walk-while-aiming off). Changes apply whil
 ## Known issues
 
 - When you start aiming with the camera turned far away from Leon, the aim camera swings around quickly.
-- Walking while aiming moves Leon directly. Walls and stairs are not tested yet, so he may slide through a wall.
+- Walking while aiming checks walls at knee height; stairs and slopes are not tested yet.
 
 Found a bug? [Open an issue](https://github.com/TuxLux40/re4og-modern-controls/issues), and attach
 `Bin32/RE4ModernControls.log` if you can.

@@ -10,7 +10,8 @@ struct Config {
     float turnSpeed = 9.0f;   // radians per second Leon turns toward the stick
     // [Aim]
     bool aimWalk = true;        // left stick walks while aiming, right stick aims
-    float aimWalkSpeed = 900;   // game units per second at full deflection
+    float aimWalkSpeed = 1300;  // game units per second at full deflection
+    bool crosshair = true;      // crosshair at the laser's end point
     // [Camera]
     float defaultPitch = 0.0f;  // radians, + = looks further down than the game's camera (ini: degrees)
     float height = 0.0f;        // raises the camera, game units
