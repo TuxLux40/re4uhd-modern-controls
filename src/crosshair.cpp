@@ -2,8 +2,8 @@
 //
 // The game's laser update (re4.h kFnLaser) traces the beam from the gun and cuts it at the first hit, leaving the end
 // point in kLaserEnd. While it runs with its draw flag set (the player aims a laser weapon), the mod projects that
-// point through the rendered camera (CameraControl::Camera_60's eye/target/fovy) and, just before the frame is
-// presented, draws a remake-style reticle (dot + four ticks) there with IDirect3DDevice9::Clear rectangles: no
+// point through the game's own view and projection matrices (CameraControl::Camera_60) just before the frame is
+// presented, and draws a remake-style reticle (dot + four ticks) there with IDirect3DDevice9::Clear rectangles: no
 // shaders, no render states touched. It sits on the laser by construction: same 3D point, same camera; no laser, no
 // reticle.
 //
@@ -18,62 +18,71 @@
 
 using namespace re4;
 
-static volatile DWORD g_laserTick = 0;  // last frame the laser was drawn
-static volatile float g_aimX = 0.0f, g_aimY = 0.0f;  // laser end in NDC (-1..1, y up)
-static volatile bool g_aimOnScreen = false;
+static volatile DWORD g_laserTick = 0;  // last frame the game drew the laser
 
 // --------------------------------------------------------------------------------------------------- laser hook
 typedef void(__fastcall* PFN_Laser)(uintptr_t self, void* edx, char draw, char b, char c);
 static PFN_Laser g_origLaser = nullptr;
 
-static void ProjectLaserEnd() {
-    const uintptr_t cam = Va(kCamCtrl) + cc::Camera + cc::CameraPoint;  // CAMERA_POINT of the rendered view
-    const float* eye = (const float*)cam;
-    const float* tgt = eye + 3;
-    const float fovy = ((const float*)cam)[7];
-    const float* p = (const float*)Va(kLaserEnd);
-
-    float f[3] = {tgt[0] - eye[0], tgt[1] - eye[1], tgt[2] - eye[2]};
-    float fl = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
-    if (fl < 1e-3f || !(fovy > 1.0f && fovy < 170.0f)) {
-        g_aimOnScreen = false;
-        return;
-    }
-    for (float& v : f) v /= fl;
-    // right = forward x worldUp, up = right x forward (the game's handedness: see camera.cpp's yaw convention)
-    float r[3] = {-f[2], 0.0f, f[0]};
-    const float rl = sqrtf(r[0] * r[0] + r[2] * r[2]);
-    if (rl < 1e-4f) {
-        g_aimOnScreen = false;
-        return;
-    }
-    r[0] /= rl;
-    r[2] /= rl;
-    const float u[3] = {r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]};
-    const float d[3] = {p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]};
-    const float z = d[0] * f[0] + d[1] * f[1] + d[2] * f[2];
-    if (z < 10.0f) {
-        g_aimOnScreen = false;
-        return;
-    }
-    const float x = d[0] * r[0] + d[1] * r[1] + d[2] * r[2];
-    const float y = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
-    const float t = tanf(fovy * 0.5f * 0.01745329252f);
-    g_aimX = x / (z * t);  // divided by the aspect ratio when drawn
-    g_aimY = y / (z * t);
-    g_aimOnScreen = true;
-}
-
 static void __fastcall HookLaser(uintptr_t self, void* edx, char draw, char b, char c) {
     g_origLaser(self, edx, draw, b, c);
-    if (!draw || !Cfg().crosshair) return;
-    ProjectLaserEnd();
-    g_laserTick = GetTickCount();
+    if (draw && Cfg().crosshair) g_laserTick = GetTickCount();
+}
+
+// The laser's end point through the game's own camera: CameraControl::Camera_60 holds the view matrix (GX 3x4,
+// row-major, built by LookAt from eye/target/roll) at +0 and the projection (4x4) at +0x64; move() copies this camera
+// to the global render camera every frame. Returns NDC (-1..1, y up).
+static bool ProjectLaserEnd(float* ndcX, float* ndcY) {
+    const uintptr_t cam = Va(kCamCtrl) + cc::Camera;
+    const float* v = (const float*)cam;           // 3x4
+    const float* pm = (const float*)(cam + 0x64);  // 4x4
+    const float* p = (const float*)Va(kLaserEnd);
+    float c[3];
+    for (int r = 0; r < 3; ++r) c[r] = v[r * 4] * p[0] + v[r * 4 + 1] * p[1] + v[r * 4 + 2] * p[2] + v[r * 4 + 3];
+    const float x = pm[0] * c[0] + pm[1] * c[1] + pm[2] * c[2] + pm[3];
+    const float y = pm[4] * c[0] + pm[5] * c[1] + pm[6] * c[2] + pm[7];
+    const float w = pm[12] * c[0] + pm[13] * c[1] + pm[14] * c[2] + pm[15];
+    if (!(w > 1e-3f)) return false;
+    *ndcX = x / w;
+    *ndcY = y / w;
+    static bool logged = false;
+    if (!logged) {
+        logged = true;
+        Log("crosshair: proj row0 %.3f %.3f %.3f %.3f row1 %.3f %.3f %.3f %.3f row3 %.3f %.3f %.3f %.3f -> ndc %.3f %.3f",
+            pm[0], pm[1], pm[2], pm[3], pm[4], pm[5], pm[6], pm[7], pm[12], pm[13], pm[14], pm[15], *ndcX, *ndcY);
+    }
+    return true;
 }
 
 // --------------------------------------------------------------------------------------------------- drawing
 static void DrawCrosshair(IDirect3DDevice9* dev) {
-    if (!g_aimOnScreen || GetTickCount() - g_laserTick > 100) return;
+    static bool visible = false;
+    static float sx = 0.0f, sy = 0.0f;  // smoothed NDC
+    static LARGE_INTEGER last = {}, freq = {};
+    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    const float dt = last.QuadPart ? (float)(now.QuadPart - last.QuadPart) / (float)freq.QuadPart : 0.0f;
+    last = now;
+
+    float nx, ny;
+    if (GetTickCount() - g_laserTick > 100 || !ProjectLaserEnd(&nx, &ny)) {
+        visible = false;
+        return;
+    }
+    // RE4 sways the aim, so the laser end shakes. The reticle follows it smoothed (~60 ms): steady like the remakes',
+    // still on the average aim point. It snaps when the aim starts.
+    if (!visible) {
+        sx = nx;
+        sy = ny;
+        visible = true;
+    } else {
+        const float k = 1.0f - expf(-dt / 0.06f);
+        sx += (nx - sx) * k;
+        sy += (ny - sy) * k;
+    }
+    if (fabsf(sx) >= 1.0f || fabsf(sy) >= 1.0f) return;
+
     IDirect3DSurface9* bb = nullptr;
     if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) || !bb) return;
     D3DSURFACE_DESC desc;
@@ -85,12 +94,10 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
     dev->SetRenderTarget(0, bb);
 
     const float w = (float)desc.Width, h = (float)desc.Height;
-    const float aspect = w / h;
-    const float ndcX = g_aimX / aspect, ndcY = g_aimY;
-    if (fabsf(ndcX) < 1.0f && fabsf(ndcY) < 1.0f) {
+    {
         // Remake-style reticle (RE2/RE3/RE4 2019-2023): a small centre dot and four short ticks around it.
-        const LONG cx = (LONG)((ndcX * 0.5f + 0.5f) * w);
-        const LONG cy = (LONG)((0.5f - ndcY * 0.5f) * h);
+        const LONG cx = (LONG)((sx * 0.5f + 0.5f) * w);
+        const LONG cy = (LONG)((0.5f - sy * 0.5f) * h);
         const LONG th = h >= 1400 ? 3 : 2;              // line thickness and dot size
         const LONG len = (LONG)(h * 0.008f) + 1;        // tick length
         const LONG gap = (LONG)(h * 0.011f) + 2;        // centre to the inner end of a tick

@@ -41,6 +41,7 @@ All re4_tweaks patterns above match exactly once. Resolved (VA at base 0x400000)
 | `Joy[0]` | 0x00C63008 | Filled in KeyConvert from the pad device object `0x00964670(0)` (floats: +0xC/+0x10 left stick, +0x14/+0x18 right stick), x127, clamp, dead zone 31 -> +-63. While a bound action (aim) is held the branch at 0x009679BD swaps the sticks: Joy left <- right stick. `PlWepLockCtrl` (0x00688090) aims from Joy left + on bits (0x00C6301C). `0x012224B0 == 1` takes a separate (mouse) aim path. |
 
 | Trace | 0x00594160 | thiscall `Trace(from, to, hit, 0, maskA, maskB)`, ret 0x18, nonzero on hit. Collision sets: 0x00BF9A7C (world: Leon's movement masks 0/0x800, game camera 0x8000/0 at 0x006F69A9), 0x00BF9AA0 (laser: 0/0x400000). `FUN_005BC050` = laser trace: world first, then models (returns 2/3 on a model). |
+| `Camera_60` matrices | CamCtrl+0x60 | `mat_0` = GX LookAt view (3x4, eye/target/roll from CamPoint +0xA4, built by 0x0059E660), `ProjMat_64` = 4x4 projection; copied to the global render camera (`pG+0x74`) each frame. The crosshair projects through these, not through eye/target/fovy (that missed the port's widescreen scale and the roll). |
 | LaserUpdate | 0x0073EA60 | thiscall (char draw, char, char): beam start 0x00C79818, end 0x00C79828 (cut at the first hit), drawn when `draw`. |
 
 Tooling notes: calls go through 5-byte `jmp` thunks (incremental linking), so call sites name the thunk, not the
@@ -55,7 +56,7 @@ searching the disassembly for `mov ecx,<object>` followed by `call`.
 | M1 | Free camera on the right stick: after `CameraQuasiFPS::move` (0x0059E130, mode 10) rotate the game's eye/target around Leon to our own yaw; aim hands back to the game camera | yaw works (oliver, 2026-10-17); free pitch + height offset work (oliver, 2026-10-17) |
 | M2 | Camera-relative movement: turn Leon toward camera yaw - stick angle, feed the game "forward" | works (oliver, 2026-10-17, with run forced via Steam Input); `Run=Always` via `KEY_RUN` after KeyConvert works |
 | M3 | Walk while aiming: the game already aims with the right stick (KeyConvert swaps the sticks into `Joy[0]` while aim is held); the mod hides the left stick and moves `pos_94` along it relative to the aim camera | walking confirmed; aim fix: log shows Leon turning and walking while aiming (2026-10-17); collision unknown |
-| M3b | Camera wall collision (trace head -> eye), aim-walk wall collision (knee-height trace, slide), crosshair at the projected laser end (D3D9 Present + Clear rects), aim-walk 1300 | built, untested |
+| M3b | (walls confirmed by oliver 2026-10-17; crosshair v1 was offset sideways) Camera wall collision (trace head -> eye), aim-walk wall collision (knee-height trace, slide), crosshair at the projected laser end (D3D9 Present + Clear rects), aim-walk 1300 | built, untested |
 | M4 | Reload on the move, quick turn, button layout | |
 | M4b | Version independence: find every address by byte pattern at startup (like re4_tweaks) instead of fixed RVAs, so other bio4.exe builds (1.0.6, future patches) work | planned |
 | M5 | In-game options menu entries: run default (Always / OuterRing / Button), free / default camera, modern / tank controls (the ini keeps working as the fallback) | planned |
