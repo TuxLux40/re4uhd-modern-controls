@@ -73,6 +73,11 @@ constexpr uint8_t kSigBullet[] = {0x55, 0x8B, 0xEC, 0x81, 0xEC, 0xD8, 0x00, 0x00
 // LaserUpdate cuts it at the first hit and draws it.
 constexpr uint32_t kFnLaserLine = 0x0033DC60;
 constexpr uint8_t kSigLaserLine[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x38, 0xA1};
+// Aim sway (0x00684330), cdecl (cPlayer*, u8 mode, float* v, float* side). kSwayMax: the current weapon's sway limit
+// (radians, written by it).
+constexpr uint32_t kFnSway = 0x00284330;
+constexpr uint8_t kSigSway[] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x08, 0x56, 0x8B, 0x75, 0x10, 0xD9, 0x06};
+constexpr uint32_t kSwayMax = 0x00866C0C;
 // Line hit test (0x005BC050), cdecl (float* from, float* to, int, int, int* hit enemy out, int* poly out): world and
 // enemies; cuts `to` at the nearest hit. LaserUpdate uses it on the laser.
 constexpr uint32_t kFnLineHit = 0x001BC050;
