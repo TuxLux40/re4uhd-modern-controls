@@ -13,7 +13,9 @@ Modern controls for the original **Resident Evil 4** (2005, Steam). No more tank
   to make out.
 - **Walls stop the camera.** The free camera stays in front of walls instead of looking through them.
 
-Made for a controller. Works on Windows and on Linux / Steam Deck (Proton).
+Made for a controller. **Requires the Steam version** of Resident Evil 4 (2005), the current update (1.1.0). On any
+other version the mod detects the different game code, logs it and changes nothing. Tested on Linux (Proton); Windows
+uses the same DLL and should work the same way, but has not been tested yet.
 
 > **Early version.** The basics work. See [what's planned](#planned) and
 > [known issues](#known-issues).
