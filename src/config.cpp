@@ -9,40 +9,9 @@ static DWORD g_lastCheck = 0;
 
 const Config& Cfg() { return g_cfg; }
 
-// Every option is written commented out, so the defaults in the code apply (and improve with updates) until a
-// player uncomments a line on purpose.
-static const char kDefaultIni[] =
-    "; RE4 Modern Controls settings. Everything works without touching this file.\r\n"
-    "; To change an option, remove the ';' in front of it and edit the value.\r\n"
-    "; Saved changes apply while the game runs.\r\n"
-    "\r\n"
-    "[Movement]\r\n"
-    "; Always    = Leon runs whenever the stick is pushed; hold the game's run button to walk\r\n"
-    "; OuterRing = run when the stick is pushed past OuterRing, walk below it\r\n"
-    "; Button    = the game's own run button (vanilla)\r\n"
-    ";Run=Always\r\n"
-    ";OuterRing=0.85\r\n"
-    "; Degrees per second Leon turns toward the stick direction\r\n"
-    ";TurnSpeed=515\r\n"
-    "\r\n"
-    "[Aim]\r\n"
-    "; 1 = while aiming the left stick walks (Leon glides, there are no strafe animations)\r\n"
-    ";Walk=1\r\n"
-    "; Game units per second at full deflection (Leon walks about 1500)\r\n"
-    ";WalkSpeed=1300\r\n"
-    "; 1 = crosshair where the laser points, in addition to the laser\r\n"
-    ";Crosshair=1\r\n"
-    "\r\n"
-    "[Camera]\r\n"
-    "; Where the camera rests vertically, in degrees relative to the game's camera (+ = higher, looking down)\r\n"
-    ";DefaultPitch=12\r\n"
-    "; Raises the whole camera (game units; Leon's shoulders are about 1500 above his feet)\r\n"
-    ";Height=250\r\n"
-    "; Degrees per second at full right-stick deflection\r\n"
-    ";YawSpeed=170\r\n"
-    ";PitchSpeed=100\r\n"
-    ";InvertX=0\r\n"
-    ";InvertY=0\r\n";
+// src/default.ini, embedded by build.sh as build/default_ini.h. Every option is commented out, so the defaults in
+// the code apply (and improve with updates) until a player or the installer sets one.
+#include "default_ini.h"
 
 static void IniPath(char* out) { wsprintfA(out, "%sRE4ModernControls.ini", ModDir()); }
 

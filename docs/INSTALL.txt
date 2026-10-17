@@ -5,20 +5,18 @@ Modern controls for the original Resident Evil 4 (2005, Steam). Controller only.
 
 INSTALL
 -------
-1. In Steam, right-click Resident Evil 4 > Manage > Browse local files.
-   A folder named "Resident Evil 4" opens (it contains the "Bin32" folder).
-2. Extract this zip into that folder. Allow it to merge with the existing
-   "Bin32" folder. The file xinput1_3.dll ends up next to bio4.exe.
-3. Windows: done, start the game.
+Windows:              double-click install.bat
+Linux / Steam Deck:   run install.sh (Desktop Mode: right-click > Run in Konsole)
 
-   Linux / Steam Deck (Proton) only: right-click Resident Evil 4 > Properties >
-   Launch Options and paste:
+The installer finds Resident Evil 4 in your Steam libraries, installs the mod,
+asks a few questions about the controls (press Enter for the recommended
+settings) and, on Linux, sets up Proton to load the mod. Then start the game
+from Steam as usual. Run the installer again any time to change the settings.
 
-       WINEDLLOVERRIDES="xinput1_3=n,b" %command%
-
-   If you also use re4_tweaks, paste this instead:
-
-       WINEDLLOVERRIDES="dinput8,xinput1_3=n,b" %command%
+Manual install: copy files/xinput1_3.dll into the game's Bin32 folder
+(Steam > right-click Resident Evil 4 > Manage > Browse local files).
+On Linux / Steam Deck also set the launch option:
+    WINEDLLOVERRIDES="xinput1_3=n,b" %command%
 
 CONTROLS
 --------
@@ -31,14 +29,13 @@ Aim             Leon turns to where the camera looks
 
 UNINSTALL
 ---------
-Delete Bin32\xinput1_3.dll (and RE4ModernControls.ini / .log next to it).
-Linux: also remove the launch option.
+Windows: install.bat -Uninstall      Linux / Steam Deck: ./install.sh --uninstall
 
 SETTINGS
 --------
-Everything works with the defaults. An in-game settings page is planned.
-Until then, advanced settings live in Bin32\RE4ModernControls.ini, which the
-mod creates on the first start (changes apply while the game runs).
+The installer covers the main choices. Fine-tuning lives in
+Bin32\RE4ModernControls.ini, which explains every option (changes apply while
+the game runs). An in-game settings page is planned.
 
 Project page, updates and bug reports:
 https://github.com/TuxLux40/re4og-modern-controls

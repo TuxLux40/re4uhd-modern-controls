@@ -17,6 +17,9 @@ Code map:
 | `src/config.cpp` | `RE4ModernControls.ini`: defaults, live reload |
 | `src/game.cpp` | hook setup, the `CameraControl::move` probe that logs camera mode / Leon's state |
 | `src/re4.h` | addresses and struct offsets for this `bio4.exe` build |
+| `src/crosshair.cpp` | laser end point -> screen, D3D9 `Present` hook drawing the reticle |
+| `src/default.ini` | the settings file template: embedded into the DLL by `build.sh` and shipped to the installers |
+| `installer/` | `install.sh` (Linux/Deck: Steam library search, Proton `AppDefaults\bio4.exe\DllOverrides` in the prefix's `user.reg`), `install.ps1` + `install.bat` (Windows) |
 
 Reverse-engineering notes, addresses and the milestone plan: [RE-NOTES.md](RE-NOTES.md).
 
@@ -33,9 +36,11 @@ VERSION=0.1.0 bash build.sh package                                   # + dist/R
 
 ## Releasing
 
-Push a tag `vX.Y.Z`. The `release` workflow builds the DLL with that version, packages
-`RE4ModernControls-vX.Y.Z.zip` (`Bin32/xinput1_3.dll`, install notes, licence) and publishes a GitHub release.
-Every push to `main` also builds and uploads the zip as a workflow artifact.
+Push a tag `vX.Y.Z`. The workflow builds the DLL with that version and packages `RE4ModernControls-vX.Y.Z.zip`
+(installers, `files/xinput1_3.dll`, `files/default.ini`, README, licence). Before publishing it tests the Linux
+installer against a fake Steam library, the Windows installer on a Windows runner, and loads the DLL into a 32-bit
+Windows process to check it starts and stays inactive outside RE4. Only then is the GitHub release created.
+Every push to `main` runs the same build and tests and uploads the zip as a workflow artifact.
 
 ## Log
 

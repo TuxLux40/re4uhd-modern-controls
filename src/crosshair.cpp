@@ -3,7 +3,9 @@
 // The game's laser update (re4.h kFnLaser) traces the beam from the gun and cuts it at the first hit, leaving the end
 // point in kLaserEnd. While it runs with its draw flag set (the player aims a laser weapon), the mod projects that
 // point through the rendered camera (CameraControl::Camera_60's eye/target/fovy) and, just before the frame is
-// presented, draws a small "+" there with IDirect3DDevice9::Clear rectangles: no shaders, no render states touched.
+// presented, draws a remake-style reticle (dot + four ticks) there with IDirect3DDevice9::Clear rectangles: no
+// shaders, no render states touched. It sits on the laser by construction: same 3D point, same camera; no laser, no
+// reticle.
 //
 // Device access: Direct3DCreate9 is hooked to catch IDirect3D9::CreateDevice, which hooks the device's Present.
 #include "common.h"
@@ -86,21 +88,24 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
     const float aspect = w / h;
     const float ndcX = g_aimX / aspect, ndcY = g_aimY;
     if (fabsf(ndcX) < 1.0f && fabsf(ndcY) < 1.0f) {
+        // Remake-style reticle (RE2/RE3/RE4 2019-2023): a small centre dot and four short ticks around it.
         const LONG cx = (LONG)((ndcX * 0.5f + 0.5f) * w);
         const LONG cy = (LONG)((0.5f - ndcY * 0.5f) * h);
-        const LONG len = (LONG)(h * 0.012f) + 2, gap = (LONG)(h * 0.005f) + 1;
-        const LONG th = h >= 1400 ? 3 : 2, half = th / 2, o = 1;  // arm thickness, outline width
-        const D3DRECT arms[4] = {
-            {cx - gap - len, cy - half, cx - gap, cy - half + th},
-            {cx + gap, cy - half, cx + gap + len, cy - half + th},
-            {cx - half, cy - gap - len, cx - half + th, cy - gap},
-            {cx - half, cy + gap, cx - half + th, cy + gap + len},
+        const LONG th = h >= 1400 ? 3 : 2;              // line thickness and dot size
+        const LONG len = (LONG)(h * 0.008f) + 1;        // tick length
+        const LONG gap = (LONG)(h * 0.011f) + 2;        // centre to the inner end of a tick
+        const LONG a = th / 2, b = th - a;              // splits the thickness around the centre line
+        const D3DRECT marks[5] = {
+            {cx - a, cy - a, cx + b, cy + b},                  // dot
+            {cx - gap - len, cy - a, cx - gap, cy + b},        // left
+            {cx + gap, cy - a, cx + gap + len, cy + b},        // right
+            {cx - a, cy - gap - len, cx + b, cy - gap},        // top
+            {cx - a, cy + gap, cx + b, cy + gap + len},        // bottom
         };
-        D3DRECT outline[4];
-        for (int i = 0; i < 4; ++i)
-            outline[i] = {arms[i].x1 - o, arms[i].y1 - o, arms[i].x2 + o, arms[i].y2 + o};
-        dev->Clear(4, outline, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0), 1.0f, 0);
-        dev->Clear(4, arms, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 255, 255, 255), 1.0f, 0);
+        D3DRECT edge[5];
+        for (int i = 0; i < 5; ++i) edge[i] = {marks[i].x1 - 1, marks[i].y1 - 1, marks[i].x2 + 1, marks[i].y2 + 1};
+        dev->Clear(5, edge, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 30, 30, 30), 1.0f, 0);
+        dev->Clear(5, marks, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 245, 245, 245), 1.0f, 0);
     }
 
     if (oldRt) {

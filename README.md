@@ -23,25 +23,25 @@ uses the same DLL and should work the same way, but has not been tested yet.
 ## Install
 
 1. Download the latest `RE4ModernControls-vX.Y.Z.zip` from
-   [**Releases**](https://github.com/TuxLux40/re4og-modern-controls/releases).
-2. In Steam, right-click **Resident Evil 4** → **Manage** → **Browse local files**.
-3. Extract the zip into that folder and let it merge with the existing `Bin32` folder.
-4. **Windows:** done. Start the game.
+   [**Releases**](https://github.com/TuxLux40/re4og-modern-controls/releases) and extract it anywhere.
+2. Run the installer:
+   - **Windows:** double-click `install.bat`.
+   - **Linux / Steam Deck (Desktop Mode):** run `install.sh` (right-click → Run in Konsole, or `./install.sh` in a
+     terminal).
+3. Answer a few questions (or just press Enter for the recommended settings). Done: start the game from Steam.
 
-   **Linux / Steam Deck:** right-click **Resident Evil 4** → **Properties** → **Launch Options** and paste:
+The installer finds the game in your Steam libraries, installs the mod, saves your settings, and on Linux sets up
+Proton to load it. No launch options to paste. Run it again any time to change the settings; choose
+`install.bat -Uninstall` / `./install.sh --uninstall` to remove the mod.
 
-   ```
-   WINEDLLOVERRIDES="xinput1_3=n,b" %command%
-   ```
+<details>
+<summary>Manual install</summary>
 
-   If you also use [re4_tweaks](https://github.com/nipkownix/re4_tweaks), paste this instead:
-
-   ```
-   WINEDLLOVERRIDES="dinput8,xinput1_3=n,b" %command%
-   ```
-
-**Uninstall:** delete `Bin32/xinput1_3.dll` (and the `RE4ModernControls.ini` / `.log` next to it). On Linux, also
-remove the launch option.
+Copy `files/xinput1_3.dll` from the zip into the game's `Bin32` folder (Steam → right-click Resident Evil 4 →
+Manage → Browse local files). On Linux / Steam Deck also set the launch option
+`WINEDLLOVERRIDES="xinput1_3=n,b" %command%` (with re4_tweaks: `WINEDLLOVERRIDES="dinput8,xinput1_3=n,b" %command%`).
+To uninstall, delete `Bin32/xinput1_3.dll` and `RE4ModernControls.ini` / `.log` next to it.
+</details>
 
 ## Controls
 
@@ -54,9 +54,9 @@ remove the launch option.
 
 ## Settings
 
-The defaults are meant to just work. An in-game settings page is planned. Until then, the mod creates
-`Bin32/RE4ModernControls.ini` on the first start for anyone who wants to fine-tune it (camera height and angle,
-turn speeds, run behaviour, switching walk-while-aiming off). Changes apply while the game runs.
+The installer asks about the main choices: run behaviour, walking while aiming, the crosshair, camera height and
+inverted camera. An in-game settings page is planned. For fine-tuning (turn and camera speeds, exact camera height
+and angle) there is `Bin32/RE4ModernControls.ini`, which explains every option; changes apply while the game runs.
 
 ## Planned
 

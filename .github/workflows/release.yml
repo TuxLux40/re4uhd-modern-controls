@@ -13,6 +13,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -23,25 +25,97 @@ jobs:
       - name: Install zig 0.17.0 (PyPI build)
         run: python -m pip install ziglang==0.17.0
 
-      - name: Build and package
+      - name: Version
+        id: ver
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="0.0.0-dev.${GITHUB_SHA::7}"
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          ZIG="python -m ziglang" VERSION="$VERSION" bash build.sh package
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev.${GITHUB_SHA::7}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build and package
+        run: ZIG="python -m ziglang" VERSION="${{ steps.ver.outputs.version }}" bash build.sh package
+
+      - name: Test the Linux installer against a fake Steam library
+        run: |
+          set -euo pipefail
+          unzip -q dist/*.zip -d pkg && P=$(echo pkg/*)
+          H=$RUNNER_TEMP/home; S=$H/.local/share/Steam/steamapps
+          mkdir -p "$S/common/Resident Evil 4/Bin32" "$S/compatdata/254700/pfx"
+          printf '"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t\t"%s"\n\t}\n}\n' "$H/.local/share/Steam" > "$S/libraryfolders.vdf"
+          printf '"AppState"\n{\n\t"installdir"\t\t"Resident Evil 4"\n}\n' > "$S/appmanifest_254700.acf"
+          echo stub > "$S/common/Resident Evil 4/Bin32/bio4.exe"
+          printf 'WINE REGISTRY Version 2\n' > "$S/compatdata/254700/pfx/user.reg"
+          HOME=$H "$P/install.sh" --defaults
+          B="$S/common/Resident Evil 4/Bin32"
+          test -f "$B/xinput1_3.dll" && test -f "$B/RE4ModernControls.ini"
+          grep -q 'AppDefaults\\\\bio4.exe\\\\DllOverrides' "$S/compatdata/254700/pfx/user.reg"
+          HOME=$H "$P/install.sh" --uninstall
+          test ! -f "$B/xinput1_3.dll" && ! grep -q AppDefaults "$S/compatdata/254700/pfx/user.reg"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RE4ModernControls-v${{ env.VERSION }}
+          name: RE4ModernControls-v${{ steps.ver.outputs.version }}
           path: dist/*.zip
 
+  windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: RE4ModernControls-v${{ needs.build.outputs.version }}
+
+      - name: Test the Windows installer against a fake game folder
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Expand-Archive (Get-Item *.zip).FullName -DestinationPath pkg
+          $p = (Get-ChildItem pkg -Directory)[0].FullName
+          $game = Join-Path $env:RUNNER_TEMP "Resident Evil 4"
+          New-Item -ItemType Directory -Force (Join-Path $game "Bin32") | Out-Null
+          Set-Content (Join-Path $game "Bin32\bio4.exe") "stub"
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$p\install.ps1" -Defaults -GameDir $game
+          if (-not (Test-Path "$game\Bin32\xinput1_3.dll")) { throw "DLL not installed" }
+          if (-not (Test-Path "$game\Bin32\RE4ModernControls.ini")) { throw "ini not written" }
+          & powershell -NoProfile -ExecutionPolicy Bypass -File "$p\install.ps1" -Uninstall -GameDir $game
+          if (Test-Path "$game\Bin32\xinput1_3.dll") { throw "DLL not removed" }
+
+      - name: Load the DLL on Windows (32-bit) and check it stays inactive outside RE4
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $p = (Get-ChildItem pkg -Directory)[0].FullName
+          $dll = "$p\files\xinput1_3.dll"
+          $ps32 = "$env:WINDIR\SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
+          $test = Join-Path $env:RUNNER_TEMP "loadtest.ps1"
+          Set-Content $test @'
+          param([string]$Dll)
+          Add-Type -Name K -Namespace W -MemberDefinition '[DllImport("kernel32", CharSet = CharSet.Unicode)] public static extern IntPtr LoadLibrary(string p);'
+          $h = [W.K]::LoadLibrary($Dll)
+          if ($h -eq [IntPtr]::Zero) { Write-Host "LoadLibrary failed"; exit 2 }
+          Start-Sleep -Seconds 3
+          exit 0
+          '@
+          & $ps32 -NoProfile -ExecutionPolicy Bypass -File $test -Dll $dll
+          if ($LASTEXITCODE -ne 0) { throw "load failed" }
+          $log = Get-Content "$p\files\RE4ModernControls.log" -Raw
+          Write-Host $log
+          if ($log -notmatch "RE4 Modern Controls v") { throw "no startup line in the log" }
+          if ($log -notmatch "unexpected code") { throw "hooks did not refuse a foreign process" }
+
+  release:
+    needs: [build, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: RE4ModernControls-v${{ needs.build.outputs.version }}
+          path: dist
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/*.zip \
             --title "RE4 Modern Controls $GITHUB_REF_NAME" \
