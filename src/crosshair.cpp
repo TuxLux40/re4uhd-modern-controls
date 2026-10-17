@@ -178,8 +178,10 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
             const float r = SwayRadius();
             if (r > 0.0f && fovy > 1.0f && fovy < 170.0f && aspect > 0.5f && aspect < 8.0f) {
                 const float px = tanf(r) / (tanf(fovy * 0.5f * 0.01745329252f) * aspect) * w * 0.5f;
-                const LONG want = (LONG)(px * 1.1f) + 3;
-                if (want > gap) gap = want < (LONG)(h * 0.08f) ? want : (LONG)(h * 0.08f);
+                // The drift rarely gets past a quarter of the limit (measured with the TMP: limit 0.122, drift up to
+                // 0.022 sideways and 0.02 vertically, shots included).
+                const LONG want = (LONG)(px * 0.3f) + 3;
+                if (want > gap) gap = want < (LONG)(h * 0.06f) ? want : (LONG)(h * 0.06f);
             }
         }
         const LONG a = th / 2, b = th - a;              // splits the thickness around the centre line
