@@ -17,6 +17,8 @@ struct Config {
     float height = 0.0f;        // raises the camera, game units
     float yawSpeed = 3.0f;      // radians per second at full deflection
     float pitchSpeed = 1.8f;
+    float autoFollow = 1.4f;       // radians per second the camera eases behind Leon while he moves (0 = off)
+    float autoFollowDelay = 1.0f;  // seconds without right-stick input before it starts
     bool invertX = false;
     bool invertY = false;
 };

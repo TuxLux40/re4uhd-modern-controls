@@ -52,12 +52,15 @@ void LoadConfig() {
     c.height = ReadFloat(path, "Camera", "Height", 0.0f);
     c.yawSpeed = ReadFloat(path, "Camera", "YawSpeed", 170.0f) * kDeg;
     c.pitchSpeed = ReadFloat(path, "Camera", "PitchSpeed", 100.0f) * kDeg;
+    c.autoFollow = ReadFloat(path, "Camera", "AutoFollow", 80.0f) * kDeg;
+    c.autoFollowDelay = ReadFloat(path, "Camera", "AutoFollowDelay", 1.0f);
     c.invertX = ReadFloat(path, "Camera", "InvertX", 0.0f) != 0.0f;
     c.invertY = ReadFloat(path, "Camera", "InvertY", 0.0f) != 0.0f;
     g_cfg = c;
     Log("config: aim walk %d speed %.0f crosshair %d", c.aimWalk, c.aimWalkSpeed, c.crosshair);
     Log("config: run %d outer %.2f turn %.2f rad/s | cam pitch %.3f height %.0f yaw %.2f pitch %.2f rad/s inv %d%d",
         c.run, c.outerRing, c.turnSpeed, c.defaultPitch, c.height, c.yawSpeed, c.pitchSpeed, c.invertX, c.invertY);
+    Log("config: auto-follow %.2f rad/s after %.1f s", c.autoFollow, c.autoFollowDelay);
 }
 
 void ConfigTick() {

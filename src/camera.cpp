@@ -46,6 +46,7 @@ static volatile float g_aimMoveX = 0.0f, g_aimMoveY = 0.0f;  // left stick while
 static volatile float g_yaw = 0.0f;  // world yaw the free camera looks along
 static float g_pitch = 0.0f;         // radians on top of the game's own camera pitch
 static float g_appliedDefaultPitch = 0.0f;  // Config::defaultPitch that g_pitch currently includes
+static float g_stickIdle = 0.0f;             // seconds since the right stick last turned the camera
 static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
@@ -281,6 +282,17 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_wasMoving = g_moving;
 
     g_yaw = WrapPi(g_yaw - g_stickRx * cfg.yawSpeed * dt);
+    // Auto-follow: while Leon moves and the right stick rests, ease the camera round to where the original camera
+    // would be. Slower for small differences, so it settles
+    // instead of snapping; any right-stick input hands the camera straight back to the player.
+    g_stickIdle = (g_stickRx != 0.0f || g_stickRy != 0.0f) ? 0.0f : g_stickIdle + dt;
+    if (cfg.autoFollow > 0.0f && g_moving && g_stickIdle >= cfg.autoFollowDelay) {
+        // The game's own camera (gameYaw) already sits behind Leon with its natural lag: follow that.
+        const float diff = WrapPi(gameYaw - g_yaw);
+        const float ease = fabsf(diff) < 0.6f ? fabsf(diff) / 0.6f : 1.0f;
+        const float step = cfg.autoFollow * ease * dt;
+        g_yaw = WrapPi(g_yaw + (fabsf(diff) <= step ? diff : copysignf(step, diff)));
+    }
     // Stick up looks up: the camera comes down.
     g_pitch = Clamp(g_pitch - g_stickRy * cfg.pitchSpeed * dt, -0.6f, 1.0f);
 

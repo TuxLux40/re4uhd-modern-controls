@@ -22,7 +22,7 @@ No more tank controls: move where you push the stick, look around freely, walk w
 | | |
 |---|---|
 | 🕹️ **Camera-relative movement** | Push the left stick toward any direction on screen and Leon goes there. He runs by default; hold the run button to walk. |
-| 🎥 **Free camera** | The right stick turns the camera freely around Leon, and it stays where you leave it. It looks a little further down than the original and stops at walls. |
+| 🎥 **Free camera** | The right stick turns the camera freely around Leon. Leave the stick alone while moving and it eases back behind him. It looks a little further down than the original and stops at walls. |
 | 🎯 **Aim where you look** | When you aim, Leon turns to face where the camera points. Aim with the right stick. |
 | 🚶 **Walk while aiming** | Move with the left stick while aiming. RE4 has no strafe animations, so Leon glides. |
 | ➕ **Remake-style crosshair** | A small reticle sits exactly on the laser's end point, so you always see your aim. |
@@ -73,7 +73,7 @@ Everything else (shoot, reload, knife, actions, quick turn) stays on the game's 
 
 The installer asks about the main choices: run behaviour, walking while aiming, the crosshair, camera height and
 inverted camera. Run it again any time to change them. For fine-tuning (turn and camera speeds, exact camera height
-and angle) there is `Bin32/RE4ModernControls.ini`, which explains every option; changes apply while the game runs.
+and angle, how fast the camera follows Leon) there is `Bin32/RE4ModernControls.ini`, which explains every option; changes apply while the game runs.
 An in-game settings page is [planned](#planned).
 
 ## Compatibility
