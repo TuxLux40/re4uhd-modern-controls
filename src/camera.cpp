@@ -49,6 +49,7 @@ static float g_appliedDefaultPitch = 0.0f;  // Config::defaultPitch that g_pitch
 static float g_stickIdle = 0.0f;             // seconds since the right stick last turned the camera
 static bool g_stickLatched = false;          // after an aim: ignore the right stick until it returns to centre
 static float g_modBlend = 1.0f;              // how much of the free camera's tilt and height applies (0..1)
+static float g_room = -1.0f;                 // smoothed share of the camera distance free of walls (-1 = start over)
 static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
@@ -69,6 +70,17 @@ static float DeadZone(float v, float dz) {
 static bool Aiming() {
     const uint64_t keys = *(const uint64_t*)Va(kKeyBtnOn);
     return (keys & (KEY_KAMAE | KEY_KAMAE_KNIFE)) != 0;
+}
+
+static uintptr_t Player();
+
+// Free movement only while Leon stands, walks or runs (routine r_no_0 0, r_no_1 wait 0 / walk 1 / run 3). Grabbed,
+// hit, ladders and other actions keep the game's own stick handling, so Leon isn't turned while an enemy holds him.
+static bool FreeToMove() {
+    const uintptr_t pl = Player();
+    if (!pl) return false;
+    const uint8_t r0 = At<uint8_t>(pl, pl::RNo0), r1 = At<uint8_t>(pl, pl::RNo0 + 1);
+    return r0 == 0 && (r1 == 0 || r1 == 1 || r1 == 3);
 }
 
 void FreeCameraPad(XGamepad& pad) {
@@ -96,6 +108,10 @@ void FreeCameraPad(XGamepad& pad) {
     }
     // The game's own right-stick look-around springs back and would fight the free camera.
     pad.sThumbRX = pad.sThumbRY = 0;
+    if (!FreeToMove()) {
+        g_moving = false;
+        return;
+    }
     const float lx = pad.sThumbLX / 32767.0f, ly = pad.sThumbLY / 32767.0f;
     const float mag = sqrtf(lx * lx + ly * ly);
     if (mag < 0.25f) {
@@ -149,23 +165,17 @@ static void WalkWithCollision(float* pos, float dx, float dz) {
     }
 }
 
-// Keeps the camera in front of walls: traces from a pivot to the eye and pulls the eye in to the first hit. The pivot
-// is beside Leon's shoulder, at the original camera's height and sideways offset, so the line runs along the view
-// direction: a camera pressed in by walls dollies in and keeps Leon on the left of the frame, at the original framing
-// height. Returns how much of that distance is left (1 = nothing in the way).
-static float CameraCollision(const float* pivot, float* eye) {
-    const float* head = pivot;
+// How much of the line from the pivot to the eye is free of walls (1 = nothing in the way), keeping the eye 150 units
+// off a wall. The pivot is beside Leon's shoulder, at the original camera's height and sideways offset, so the line
+// runs along the view direction: a camera pressed in by walls dollies in and keeps Leon on the left of the frame.
+static float FreeRoom(const float* pivot, const float* eye) {
     float hit[3];
-    if (!Trace(head, eye, hit, kTraceCamA, kTraceCamB)) return 1.0f;
-    const float ex = eye[0] - head[0], ey = eye[1] - head[1], ez = eye[2] - head[2];
+    if (!Trace(pivot, eye, hit, kTraceCamA, kTraceCamB)) return 1.0f;
+    const float ex = eye[0] - pivot[0], ey = eye[1] - pivot[1], ez = eye[2] - pivot[2];
     const float full = sqrtf(ex * ex + ey * ey + ez * ez);
-    const float dx = head[0] - hit[0], dy = head[1] - hit[1], dz = head[2] - hit[2];
+    const float dx = hit[0] - pivot[0], dy = hit[1] - pivot[1], dz = hit[2] - pivot[2];
     const float len = sqrtf(dx * dx + dy * dy + dz * dz);
-    const float back = len > 150.0f ? 150.0f / len : 1.0f;  // stay 150 units off the wall
-    eye[0] = hit[0] + dx * back;
-    eye[1] = hit[1] + dy * back;
-    eye[2] = hit[2] + dz * back;
-    return full > 1.0f ? (len - 150.0f > 0.0f ? (len - 150.0f) / full : 0.0f) : 1.0f;
+    return full > 1.0f ? Clamp((len - 150.0f) / full, 0.0f, 1.0f) : 1.0f;
 }
 
 // Ashley ducks behind Leon while he aims; vanilla never moved Leon then, so the game doesn't keep her on the floor.
@@ -243,6 +253,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         g_pitch = cfg.defaultPitch;
         g_haveYaw = true;
         g_wasAiming = false;
+        g_room = -1.0f;
     }
     g_lastFrameTick = now;
     const float dt = DeltaSec();
@@ -318,6 +329,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     // when walls pull the camera in (corridors), so tight spaces get a camera closer to the original.
     // After an aim (or a reset) the tilt and height come back over 0.3 s instead of in one frame.
     g_modBlend = g_modBlend + dt / 0.3f < 1.0f ? g_modBlend + dt / 0.3f : 1.0f;
+    float shoulder[3];
     auto build = [&](float raise) {
         for (int i = 0; i < 3; ++i) eye[i] = gameEye[i], tgt[i] = gameTgt[i];
         eye[1] += cfg.height * raise * g_modBlend;
@@ -339,11 +351,23 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         // Sideways offset of the eye from Leon in the camera's frame (right = (-cos yaw, 0, sin yaw)).
         const float rx = -cosf(g_yaw), rz = sinf(g_yaw);
         const float side = (eye[0] - pos[0]) * rx + (eye[2] - pos[2]) * rz;
-        const float shoulder[3] = {pos[0] + rx * side, pos[1] + pivotHeight, pos[2] + rz * side};
-        return CameraCollision(shoulder, eye);
+        shoulder[0] = pos[0] + rx * side;
+        shoulder[1] = pos[1] + pivotHeight;
+        shoulder[2] = pos[2] + rz * side;
     };
-    const float room = build(1.0f);
-    if (room < 0.9f) build(room);
+    build(g_room < 0.0f ? 1.0f : Clamp(g_room / 0.9f, 0.0f, 1.0f));
+    // Walls: ease the camera in and out instead of jumping to the wall. In fast enough to barely show the wall's
+    // far side, out slowly so walking past a pillar or out of a corridor doesn't throw the view around.
+    const float want = FreeRoom(shoulder, eye);
+    if (g_room < 0.0f) {
+        g_room = want;
+    } else {
+        const float tau = want < g_room ? 0.1f : 0.6f;
+        g_room += (want - g_room) * (1.0f - expf(-dt / tau));
+        if (g_room > want + 0.3f) g_room = want + 0.3f;  // never far behind a wall
+    }
+    if (g_room < 1.0f)
+        for (int i = 0; i < 3; ++i) eye[i] = shoulder[i] + (eye[i] - shoulder[i]) * g_room;
     g_view = VIEW_FREE;
 }
 
