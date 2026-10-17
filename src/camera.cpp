@@ -57,6 +57,7 @@ static int g_aimLogFrames = -1;              // frames until the aim-start check
 static float g_aimSeedTime = 0.0f;           // seconds left in which the vertical aim is held at the camera's tilt
 static int g_aimTraceFrames = 0;             // aim frames left to log the vertical aim (diagnostics)
 static float g_aimSeed = 0.0f;
+static float g_aimTilt = 0.0f;                // free-camera tilt still faded out on the aim camera (rad)
 static bool g_wasMoving = false;
 enum View { VIEW_NONE, VIEW_FREE, VIEW_AIM };
 static volatile int g_view = VIEW_NONE;  // what the camera hook did on the last gameplay frame
@@ -271,7 +272,8 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             // Vertical aim: -1..1, + = up (angle doubled when up, times 2/pi; the console game's look-to-aim math).
             const float a = Clamp(-(g_pitch - cfg.defaultPitch), -1.4f, 0.75f);
             g_aimSeed = Clamp((a > 0.0f ? a + a : a) * 0.63661977f, -1.0f, 1.0f);
-            g_aimSeedTime = 0.5f;
+            g_aimSeedTime = 0.05f;
+            g_aimTilt = g_pitch + a;  // the aim itself now looks down by -a; only the rest is extra camera tilt
             g_aimTraceFrames = 40;
             g_aimLogFrames = 20;
             Log("cam: aim start, leon yaw -> %.3f, tilt %.2f -> vertical aim %.2f (was %.2f / %.2f, blend %.2f)", ang[1],
@@ -303,7 +305,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         // Fade the free camera's tilt out over 0.25 s instead of dropping it in one frame.
         g_modBlend = g_modBlend > dt / 0.25f ? g_modBlend - dt / 0.25f : 0.0f;
         if (g_modBlend > 0.0f) {
-            const float pitch = g_pitch * g_modBlend;
+            const float pitch = g_aimTilt * g_modBlend;
             const float* lpos = (const float*)(pl + pl::Pos);
             const float pivot[3] = {lpos[0], tgt[1], lpos[2]};
             RotatePitch(eye, pivot, sinf(gameYaw), cosf(gameYaw), cosf(pitch), sinf(pitch));
