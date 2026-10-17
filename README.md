@@ -26,7 +26,7 @@ No more tank controls: move where you push the stick, look around freely, walk w
 | 🎯 **Aim where you look** | When you aim, Leon turns to face where the camera points. Aim with the right stick. |
 | 🕹️ **Tank controls still on the d-pad** | Modern controls on the stick, the original tank controls on the d-pad. Use whichever fits the moment. |
 | 🚶 **Walk while aiming** | Move with the left stick while aiming. RE4 has no strafe animations, so Leon glides. |
-| ➕ **Remake-style crosshair** | A small reticle sits exactly on the laser's end point, so you always see your aim. |
+| ➕ **Remake-style crosshair** | A small reticle in the middle of the screen: while aiming, the camera looks where the laser points, so the laser and your shots land under it. The aim sway stays (it shows as the laser dot wobbling). Prefer the original aim camera? Set `CenteredAim=0` and the reticle follows the laser instead. |
 | 🛡️ **Ashley is safe from your shots** | With the camera free, it's easy to catch her in the crossfire. Your guns and knife no longer hurt her, the way her armour costume protects her; enemies and explosions still do. Can be switched off. |
 
 ## Install

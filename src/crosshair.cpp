@@ -26,8 +26,12 @@ static PFN_Laser g_origLaser = nullptr;
 
 static void __fastcall HookLaser(uintptr_t self, void* edx, char draw, char b, char c) {
     g_origLaser(self, edx, draw, b, c);
-    if (draw && Cfg().crosshair) g_laserTick = GetTickCount();
+    if (draw) g_laserTick = GetTickCount();
 }
+
+static volatile DWORD g_centeredTick = 0;  // last frame the camera was turned to look at the aim point
+void SetAimCentered() { g_centeredTick = GetTickCount(); }
+static bool AimCentered() { return GetTickCount() - g_centeredTick < 100; }
 
 // The laser's end point through the game's own camera. CameraControl::Camera_60 (copied to the global render camera
 // every frame) holds at +0 the camera-to-world matrix (GX 3x4: rotation columns, eye in the last column; the camera
@@ -61,6 +65,13 @@ static void AimPoint(float* out) {
     }
     const float k = g_depth / len;
     out[0] = s[0] + dx * k, out[1] = s[1] + dy * k, out[2] = s[2] + dz * k;
+}
+
+// For the camera: the point the crosshair marks while the laser is shown.
+bool LaserAimPoint(float* out) {
+    if (GetTickCount() - g_laserTick > 100) return false;
+    AimPoint(out);
+    return true;
 }
 
 static bool ProjectLaserEnd(float screenAspect, float* ndcX, float* ndcY) {
@@ -100,8 +111,10 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
     last = now;
 
     static float screenAspect = 16.0f / 9.0f;  // from the back buffer, below
-    float nx, ny;
-    if (GetTickCount() - g_laserTick > 100 || !ProjectLaserEnd(screenAspect, &nx, &ny)) {
+    float nx = 0.0f, ny = 0.0f;
+    // With the camera following the aim, the aim point is the centre of the view.
+    if (!Cfg().crosshair || GetTickCount() - g_laserTick > 100 ||
+        (!AimCentered() && !ProjectLaserEnd(screenAspect, &nx, &ny))) {
         visible = false;
         return;
     }

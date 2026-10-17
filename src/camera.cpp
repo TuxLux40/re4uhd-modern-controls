@@ -227,6 +227,8 @@ static void RotatePitch(float* p, const float* pivot, float fx, float fz, float 
     p[2] = pivot[2] + lz + a2 * fz;
 }
 
+static void CenterAimCamera(float* eye, float* tgt, float dt, bool start);
+
 typedef void(__fastcall* PFN_QfpsMove)(uintptr_t self, void* edx);
 static PFN_QfpsMove g_origQfpsMove = nullptr;
 
@@ -258,6 +260,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     const float dt = DeltaSec();
 
     if (Aiming()) {
+        const bool wasAimingBefore = g_wasAiming;
         if (!g_wasAiming) {
             // Turn Leon so the aim starts where the free camera looked.
             float* ang = (float*)(pl + pl::Ang);
@@ -276,6 +279,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         }
         g_yaw = gameYaw;
         g_view = VIEW_AIM;
+        if (cfg.centeredAim) CenterAimCamera(eye, tgt, dt, !wasAimingBefore);
         const float ax = g_aimMoveX, ay = g_aimMoveY;
         // Only while Leon is actually in his aim or knife stance (r_no_0 0, r_no_1 6 / 0xB): a hit or stagger with the
         // aim button still held must not slide him around.
@@ -389,6 +393,43 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     if (g_room < 1.0f)
         for (int i = 0; i < 3; ++i) eye[i] = shoulder[i] + (eye[i] - shoulder[i]) * g_room;
     g_view = VIEW_FREE;
+}
+
+bool LaserAimPoint(float* out);
+void SetAimCentered();
+
+// Centered aim: turns the aim camera (eye kept) toward the laser's aim point, so the crosshair sits in the middle of
+// the screen and the laser and bullets go where it shows. The direction is smoothed (~80 ms) so the aim sway moves
+// the laser dot, not the whole view, and blended in over 0.2 s when the aim starts.
+static float g_aimDir[3];
+static float g_aimFollow = 0.0f;
+
+static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
+    float p[3];
+    if (start) g_aimFollow = 0.0f;
+    if (!LaserAimPoint(p)) {
+        g_aimFollow = 0.0f;
+        return;
+    }
+    float cur[3] = {tgt[0] - eye[0], tgt[1] - eye[1], tgt[2] - eye[2]};
+    const float dist = sqrtf(cur[0] * cur[0] + cur[1] * cur[1] + cur[2] * cur[2]);
+    float want[3] = {p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]};
+    const float wl = sqrtf(want[0] * want[0] + want[1] * want[1] + want[2] * want[2]);
+    if (dist < 1.0f || wl < 50.0f) return;
+    for (int i = 0; i < 3; ++i) cur[i] /= dist, want[i] /= wl;
+    if (g_aimFollow == 0.0f) for (int i = 0; i < 3; ++i) g_aimDir[i] = want[i];
+    const float k = 1.0f - expf(-dt / 0.08f);
+    float n = 0.0f;
+    for (int i = 0; i < 3; ++i) g_aimDir[i] += (want[i] - g_aimDir[i]) * k, n += g_aimDir[i] * g_aimDir[i];
+    n = sqrtf(n);
+    for (int i = 0; i < 3; ++i) g_aimDir[i] /= n;
+    g_aimFollow = g_aimFollow + dt / 0.2f < 1.0f ? g_aimFollow + dt / 0.2f : 1.0f;
+    const float b = g_aimFollow * g_aimFollow * (3.0f - 2.0f * g_aimFollow);
+    float d[3], dl = 0.0f;
+    for (int i = 0; i < 3; ++i) d[i] = cur[i] + (g_aimDir[i] - cur[i]) * b, dl += d[i] * d[i];
+    dl = sqrtf(dl);
+    for (int i = 0; i < 3; ++i) tgt[i] = eye[i] + d[i] / dl * dist;
+    if (g_aimFollow >= 1.0f) SetAimCentered();
 }
 
 // Ashley: drop a hit from Leon's guns or knife before the game applies it. The attack types are exactly the ones her
