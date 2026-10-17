@@ -29,28 +29,64 @@ static void __fastcall HookLaser(uintptr_t self, void* edx, char draw, char b, c
     if (draw && Cfg().crosshair) g_laserTick = GetTickCount();
 }
 
-// The laser's end point through the game's own camera: CameraControl::Camera_60 holds the view matrix (GX 3x4,
-// row-major, built by LookAt from eye/target/roll) at +0 and the projection (4x4) at +0x64; move() copies this camera
-// to the global render camera every frame. Returns NDC (-1..1, y up).
+// The laser's end point through the game's own camera, CameraControl::Camera_60 (move() copies it to the global
+// render camera every frame): two 3x4 matrices at +0 and +0x30 and a 4x4 projection at +0x64. Which of the two is
+// world->view and how the projection is laid out is settled at runtime: the camera's own look-at target must land on
+// the screen centre, and the first combination that does that is used from then on.
+static void Mul34(const float* m, const float* p, float* out) {
+    for (int r = 0; r < 3; ++r) out[r] = m[r * 4] * p[0] + m[r * 4 + 1] * p[1] + m[r * 4 + 2] * p[2] + m[r * 4 + 3];
+}
+static bool Proj(const float* pm, bool transposed, const float* c, float* nx, float* ny) {
+    float x, y, w;
+    if (!transposed) {
+        x = pm[0] * c[0] + pm[1] * c[1] + pm[2] * c[2] + pm[3];
+        y = pm[4] * c[0] + pm[5] * c[1] + pm[6] * c[2] + pm[7];
+        w = pm[12] * c[0] + pm[13] * c[1] + pm[14] * c[2] + pm[15];
+    } else {
+        x = pm[0] * c[0] + pm[4] * c[1] + pm[8] * c[2] + pm[12];
+        y = pm[1] * c[0] + pm[5] * c[1] + pm[9] * c[2] + pm[13];
+        w = pm[3] * c[0] + pm[7] * c[1] + pm[11] * c[2] + pm[15];
+    }
+    if (!(w > 1e-3f)) return false;
+    *nx = x / w;
+    *ny = y / w;
+    return true;
+}
+
+static int g_layout = -1;  // bit 0: view matrix at +0x30 instead of +0; bit 1: projection transposed
+
 static bool ProjectLaserEnd(float* ndcX, float* ndcY) {
     const uintptr_t cam = Va(kCamCtrl) + cc::Camera;
-    const float* v = (const float*)cam;           // 3x4
-    const float* pm = (const float*)(cam + 0x64);  // 4x4
-    const float* p = (const float*)Va(kLaserEnd);
-    float c[3];
-    for (int r = 0; r < 3; ++r) c[r] = v[r * 4] * p[0] + v[r * 4 + 1] * p[1] + v[r * 4 + 2] * p[2] + v[r * 4 + 3];
-    const float x = pm[0] * c[0] + pm[1] * c[1] + pm[2] * c[2] + pm[3];
-    const float y = pm[4] * c[0] + pm[5] * c[1] + pm[6] * c[2] + pm[7];
-    const float w = pm[12] * c[0] + pm[13] * c[1] + pm[14] * c[2] + pm[15];
-    if (!(w > 1e-3f)) return false;
-    *ndcX = x / w;
-    *ndcY = y / w;
-    static bool logged = false;
-    if (!logged) {
-        logged = true;
-        Log("crosshair: proj row0 %.3f %.3f %.3f %.3f row1 %.3f %.3f %.3f %.3f row3 %.3f %.3f %.3f %.3f -> ndc %.3f %.3f",
-            pm[0], pm[1], pm[2], pm[3], pm[4], pm[5], pm[6], pm[7], pm[12], pm[13], pm[14], pm[15], *ndcX, *ndcY);
+    const float* pm = (const float*)(cam + 0x64);
+    const float* tgt = (const float*)(cam + cc::CameraPoint + 0xC);
+    float c[3], nx, ny;
+    if (g_layout < 0) {
+        static int tries = 0;
+        for (int l = 0; l < 4; ++l) {
+            Mul34((const float*)(cam + ((l & 1) ? 0x30 : 0)), tgt, c);
+            const bool ok = Proj(pm, (l & 2) != 0, c, &nx, &ny);
+            if (tries < 3) Log("crosshair: layout %d target -> %s %.3f %.3f", l, ok ? "ok" : "behind", ok ? nx : 0.0f, ok ? ny : 0.0f);
+            if (ok && fabsf(nx) < 0.05f && fabsf(ny) < 0.05f) {
+                g_layout = l;
+                break;
+            }
+        }
+        if (tries++ < 3) {
+            const float* m0 = (const float*)cam;
+            const float* m1 = (const float*)(cam + 0x30);
+            Log("crosshair: m0 %.2f %.2f %.2f %.0f | %.2f %.2f %.2f %.0f | %.2f %.2f %.2f %.0f", m0[0], m0[1], m0[2], m0[3],
+                m0[4], m0[5], m0[6], m0[7], m0[8], m0[9], m0[10], m0[11]);
+            Log("crosshair: m1 %.2f %.2f %.2f %.0f | %.2f %.2f %.2f %.0f | %.2f %.2f %.2f %.0f", m1[0], m1[1], m1[2], m1[3],
+                m1[4], m1[5], m1[6], m1[7], m1[8], m1[9], m1[10], m1[11]);
+            Log("crosshair: proj %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f | %.3f %.3f %.3f %.3f",
+                pm[0], pm[1], pm[2], pm[3], pm[4], pm[5], pm[6], pm[7], pm[8], pm[9], pm[10], pm[11], pm[12], pm[13],
+                pm[14], pm[15]);
+        }
+        if (g_layout < 0) return false;
+        Log("crosshair: using layout %d", g_layout);
     }
+    Mul34((const float*)(cam + ((g_layout & 1) ? 0x30 : 0)), (const float*)Va(kLaserEnd), c);
+    if (!Proj(pm, (g_layout & 2) != 0, c, ndcX, ndcY)) return false;
     return true;
 }
 
