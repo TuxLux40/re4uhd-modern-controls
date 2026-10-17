@@ -4,6 +4,7 @@
 // M1: free camera yaw (camera.cpp). CameraControl::move stays hooked read-only as a probe: it logs the camera mode,
 // eye/target and Leon's pose whenever the camera mode, Leon's routine bytes or the aim keys change.
 #include "common.h"
+#include <stdio.h>
 #include "re4.h"
 #include "camera.h"
 #include <math.h>
@@ -11,14 +12,69 @@
 
 using namespace re4;
 
+// Debug input: scripted pad states read from Bin32/RE4MC_input.txt (deleted once read), one step per line:
+// "<ms> <lx> <ly> <rx> <ry> <buttons hex> <lt> <rt>" with sticks in -1..1 and triggers 0..255. While a script runs it
+// replaces the physical pad, so a session can be driven without touching the controller. Only exists to test the mod.
+struct DebugStep {
+    DWORD ms;
+    float lx, ly, rx, ry;
+    unsigned buttons, lt, rt;
+};
+static DebugStep g_steps[64];
+static int g_stepCount = 0, g_step = -1;
+static DWORD g_stepStart = 0, g_lastScriptCheck = 0;
+
+static void DebugInput(XGamepad& pad) {
+    const DWORD now = GetTickCount();
+    if (g_step < 0 && now - g_lastScriptCheck >= 200) {
+        g_lastScriptCheck = now;
+        char path[MAX_PATH];
+        wsprintfA(path, "%sRE4MC_input.txt", ModDir());
+        if (FILE* f = fopen(path, "r")) {
+            g_stepCount = 0;
+            DebugStep st;
+            while (g_stepCount < 64 && fscanf(f, "%lu %f %f %f %f %x %u %u", &st.ms, &st.lx, &st.ly, &st.rx, &st.ry,
+                                              &st.buttons, &st.lt, &st.rt) == 8)
+                g_steps[g_stepCount++] = st;
+            fclose(f);
+            DeleteFileA(path);
+            if (g_stepCount > 0) {
+                g_step = 0;
+                g_stepStart = now;
+                Log("debug input: %d steps", g_stepCount);
+            }
+        }
+    }
+    if (g_step < 0) return;
+    while (g_step < g_stepCount && now - g_stepStart >= g_steps[g_step].ms) {
+        g_stepStart += g_steps[g_step].ms;
+        ++g_step;
+    }
+    if (g_step >= g_stepCount) {
+        g_step = -1;
+        Log("debug input: done");
+        return;
+    }
+    const DebugStep& st = g_steps[g_step];
+    auto axis = [](float v) { return (SHORT)(v < -1.0f ? -32767 : v > 1.0f ? 32767 : v * 32767.0f); };
+    pad.sThumbLX = axis(st.lx);
+    pad.sThumbLY = axis(st.ly);
+    pad.sThumbRX = axis(st.rx);
+    pad.sThumbRY = axis(st.ry);
+    pad.wButtons = (WORD)st.buttons;
+    pad.bLeftTrigger = (BYTE)st.lt;
+    pad.bRightTrigger = (BYTE)st.rt;
+}
+
 void TransformPad(DWORD, XGamepad& pad) {
+    DebugInput(pad);
     FreeCameraPad(pad);
     static DWORD last = 0;
     const DWORD now = GetTickCount();
     if (now - last >= 2000 && (pad.sThumbLX || pad.sThumbLY)) {
         last = now;
-        Log("pad0: L(%d,%d) R(%d,%d) buttons %04X", pad.sThumbLX, pad.sThumbLY, pad.sThumbRX, pad.sThumbRY,
-            pad.wButtons);
+        Log("pad0: L(%d,%d) R(%d,%d) buttons %04X triggers %u/%u", pad.sThumbLX, pad.sThumbLY, pad.sThumbRX,
+            pad.sThumbRY, pad.wButtons, pad.bLeftTrigger, pad.bRightTrigger);
     }
 }
 
