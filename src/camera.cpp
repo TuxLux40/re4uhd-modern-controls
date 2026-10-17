@@ -54,6 +54,8 @@ static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
 static int g_aimLogFrames = -1;              // frames until the aim-start check line is logged
+static int g_aimSeedFrames = 0;              // aim frames left in which the vertical aim is set from the camera
+static float g_aimSeed = 0.0f;
 static bool g_wasMoving = false;
 enum View { VIEW_NONE, VIEW_FREE, VIEW_AIM };
 static volatile int g_view = VIEW_NONE;  // what the camera hook did on the last gameplay frame
@@ -264,7 +266,20 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             // Turn Leon so the aim starts where the free camera looked.
             float* ang = (float*)(pl + pl::Ang);
             ang[1] = WrapPi(ang[1] + WrapPi(g_yaw - gameYaw));
-            Log("cam: aim start, leon yaw -> %.3f", ang[1]);
+            // ...and tilted as far as the camera was tilted away from its resting angle (untouched camera: level).
+            // Vertical aim: -1..1, + = up (angle doubled when up, times 2/pi; the console game's look-to-aim math).
+            const float a = Clamp(-(g_pitch - cfg.defaultPitch), -1.4f, 0.75f);
+            g_aimSeed = Clamp((a > 0.0f ? a + a : a) * 0.63661977f, -1.0f, 1.0f);
+            g_aimSeedFrames = 4;
+            g_aimLogFrames = 20;
+            Log("cam: aim start, leon yaw -> %.3f, tilt %.2f -> vertical aim %.2f (was %.2f / %.2f, blend %.2f)", ang[1],
+                a, g_aimSeed, *(const float*)Va(kAimV), *(const float*)Va(kAimVStart), *(const float*)Va(kAimVBlend));
+        }
+        // The game settles its aim during the first frames; hold the seed until then (the stick adds on top later).
+        if (g_aimSeedFrames > 0) {
+            --g_aimSeedFrames;
+            *(float*)Va(kAimV) = g_aimSeed;
+            *(float*)Va(kAimVStart) = g_aimSeed;
         }
         g_wasAiming = true;
         // Fade the free camera's tilt out over 0.25 s instead of dropping it in one frame.
@@ -379,32 +394,6 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_view = VIEW_FREE;
 }
 
-// Aim start: begin at the free camera's tilt (relative to its resting tilt, so an untouched camera aims level), the way
-// the console game did from its own look-around. Positive = up (logged once per aim below to confirm the sign).
-typedef void(__cdecl* PFN_AimInit)(uintptr_t pl);
-static PFN_AimInit g_origAimInit = nullptr;
-
-static void __cdecl HookAimInit(uintptr_t pl) {
-    g_origAimInit(pl);
-    const uintptr_t opts = *(uintptr_t*)Va(kOptionsPtr);
-    const uint32_t bits = opts ? At<uint32_t>(opts, 0) : 0;
-    // By now the camera hook may already have switched to the aim view this frame, so check for a recent free camera
-    // frame (Fresh) rather than the current view.
-    if ((bits & 0x20000000) || !g_haveYaw || !Fresh() || !Readable((void*)(pl + 0x7D8), 4)) {
-        Log("aim: start left to the game (options %08X, have camera %d, fresh %d)", bits, g_haveYaw ? 1 : 0,
-            Fresh() ? 1 : 0);
-        return;
-    }
-    const float a = Clamp(-(g_pitch - Cfg().defaultPitch), -1.4f, 0.75f);
-    const float v = Clamp((a > 0.0f ? a + a : a) * 0.63661977f, -1.0f, 1.0f);
-    *(float*)Va(kAimV) = v;
-    *(float*)Va(kAimVStart) = v;
-    const uintptr_t w = At<uintptr_t>(pl, 0x7D8);
-    if (w && Readable((void*)(w + 0x28), 4)) *(float*)(w + 0x28) = v / 0.63661977f;
-    g_aimLogFrames = 20;
-    Log("aim: start tilt %.2f rad -> vertical aim %.2f", a, v);
-}
-
 // Ashley: drop a hit from Leon's guns or knife before the game applies it. The attack types are exactly the ones her
 // armour costume shrugs off (the game's own list, in the partner hit routine).
 typedef void(__fastcall* PFN_PartnerHit)(uintptr_t self, void* edx);
@@ -477,6 +466,5 @@ bool InitCameraHooks() {
          "KeyConvert");
     Hook(kFnPartnerHit, kSigPartnerHit, sizeof(kSigPartnerHit), (void*)HookPartnerHit, (void**)&g_origPartnerHit,
          "partner hit");
-    Hook(kFnAimInit, kSigAimInit, sizeof(kSigAimInit), (void*)HookAimInit, (void**)&g_origAimInit, "aim start");
     return cam;
 }

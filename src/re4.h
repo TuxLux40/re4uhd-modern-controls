@@ -55,20 +55,16 @@ constexpr uint32_t On = 0x14;           // JOY_BTN, low nibble = digital directi
 // Read by PlWepLockCtrl: 1 selects a separate aim path (mouse aiming, presumably).
 constexpr uint32_t kAimDeviceFlag = 0x00E224B0;
 constexpr uint32_t kAimRamp = 0x00866C1C;  // float, grows while the aim stick is held
-// Vertical aim, float -1..1 (PlWepLockCtrl adds the stick to it, clamps); kAimVStart is its copy at the aim's start.
+// Vertical aim, float -1..1, + = up: kAimV is the target (PlWepLockCtrl adds the stick to it, clamps), kAimVStart the
+// value the pose uses, eased toward it by kAimVBlend (0 = follow at once). Both rewritten every frame by 0x006860C0.
 constexpr uint32_t kAimV = 0x0087A7D8;
 constexpr uint32_t kAimVStart = 0x0087A7D4;
-// Aim start, cdecl(cPlayer*) (0x00686880, called once from the aim routine's init). Sets kAimV from a camera look
-// angle (radians, doubled when > 0, times 2/pi) through 0x006F2A50, which the PC port stubbed to return 0; with
-// option bit 0x20000000 (*kOptionsPtr) it aims at the locked-on enemy instead. Stores the angle in (+0x7D8)->+0x28.
-constexpr uint32_t kFnAimInit = 0x00286880;
-constexpr uint8_t kSigAimInit[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x14, 0xA1};  // sub esp,0x14; mov eax,[cookie]
+constexpr uint32_t kAimVBlend = 0x0087A7DC;
 // Partner (cSubChar: Ashley, Luis...) hit handling, thiscall, once per frame. cEm-style cDmgInfo at +0x328 (re4_tweaks
 // SDK/em.h): +0x32C pending flag, +0x32E attack type. With the armour costume (pG+0x4FCB == 2) it drops the attack
 // types of Leon's guns and knife and only lets explosions and the like through.
 constexpr uint32_t kFnPartnerHit = 0x0035EDF0;
 constexpr uint8_t kSigPartnerHit[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x20, 0xA1};
-constexpr uint32_t kOptionsPtr = 0x00806F40;  // -> u32 option bits
 
 // KEY_BTN bits (re4_tweaks SDK/pad.h)
 constexpr uint64_t KEY_KAMAE = 0x10;         // aim (weapon ready)
