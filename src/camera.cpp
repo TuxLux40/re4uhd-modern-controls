@@ -24,20 +24,53 @@ static float WrapPi(float a) {
 }
 
 static volatile float g_stickRx = 0.0f;  // right stick X, -1..1 after the dead zone (written by the pad thread)
-static float g_yaw = 0.0f;               // world yaw the free camera looks along
+static volatile float g_yaw = 0.0f;      // world yaw the free camera looks along
 static bool g_haveYaw = false;
-static DWORD g_lastFrameTick = 0;
+static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
-static bool g_active = false;  // the free camera drew the last gameplay frame
+static volatile bool g_active = false;  // the free camera drew the last gameplay frame
 
-bool FreeCameraActive() { return g_active; }
+// Camera-relative movement (M2): the pad thread turns the left stick into a world yaw for Leon and hands the game a
+// plain "forward", so the game walks/runs him forward and never tank-turns or backpedals. The camera hook turns Leon
+// toward that yaw every frame.
+static volatile float g_moveYaw = 0.0f;
+static volatile bool g_moving = false;
+static bool g_wasMoving = false;
+
+// Gameplay only: the camera hook ran within the last 100 ms (menus, the inventory and the merchant freeze the world,
+// so the pad there is left alone).
+bool FreeCameraActive() { return g_active && GetTickCount() - g_lastFrameTick < 100; }
+
+static float DeadZone(float v, float dz) {
+    return fabsf(v) < dz ? 0.0f : (v - copysignf(dz, v)) / (1.0f - dz);
+}
+
+static bool Aiming();
 
 void FreeCameraPad(XGamepad& pad) {
-    const float rx = pad.sThumbRX / 32767.0f;
-    const float dz = 0.2f;
-    g_stickRx = fabsf(rx) < dz ? 0.0f : (rx - copysignf(dz, rx)) / (1.0f - dz);
+    g_stickRx = DeadZone(pad.sThumbRX / 32767.0f, 0.2f);
+    if (!FreeCameraActive()) {
+        g_moving = false;
+        return;
+    }
     // The game's own right-stick look-around springs back and would fight the free yaw.
-    if (g_active) pad.sThumbRX = 0;
+    pad.sThumbRX = 0;
+    if (Aiming()) {
+        g_moving = false;
+        return;
+    }
+    const float lx = pad.sThumbLX / 32767.0f, ly = pad.sThumbLY / 32767.0f;
+    const float mag = sqrtf(lx * lx + ly * ly);
+    if (mag < 0.25f) {
+        g_moving = false;
+        pad.sThumbLX = pad.sThumbLY = 0;
+        return;
+    }
+    // Stick angle: 0 = up, + = right. Screen-right is the camera yaw minus 90 degrees.
+    g_moveYaw = WrapPi(g_yaw - atan2f(lx, ly));
+    g_moving = true;
+    pad.sThumbLX = 0;
+    pad.sThumbLY = 32767;
 }
 
 static uintptr_t Player() {
@@ -99,6 +132,17 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         return;
     }
     g_wasAiming = false;
+
+    if (g_moving) {
+        float* ang = (float*)(pl + pl::Ang);
+        const float diff = WrapPi(g_moveYaw - ang[1]);
+        const float step = 0.30f * DeltaFrames();  // about 180 degrees in 0.35 s
+        ang[1] = WrapPi(ang[1] + (fabsf(diff) <= step ? diff : copysignf(step, diff)));
+        if (!g_wasMoving) Log("move: start, target yaw %.3f leon %.3f cam %.3f", g_moveYaw, ang[1], g_yaw);
+    } else if (g_wasMoving) {
+        Log("move: stop");
+    }
+    g_wasMoving = g_moving;
 
     const float turnRate = 0.10f;  // radians per 30 fps frame at full deflection (3 rad/s)
     g_yaw = WrapPi(g_yaw - g_stickRx * turnRate * DeltaFrames());

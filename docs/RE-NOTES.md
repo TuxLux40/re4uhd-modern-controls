@@ -45,8 +45,8 @@ searching the disassembly for `mov ecx,<object>` followed by `call`.
 | Milestone | Goal | Status |
 |---|---|---|
 | M0 | Proxy loads under Proton, forwards XInput, logs the stick; read-only probe on `CameraControl::move` logs the camera mode | done 2026-10-17 (loads at base 0x400000; gameplay camera = mode 10) |
-| M1 | Free camera on the right stick: after `CameraQuasiFPS::move` (0x0059E130, mode 10) rotate the game's eye/target around Leon to our own yaw; aim hands back to the game camera | yaw built, untested |
-| M2 | Camera-relative movement: turn Leon toward camera yaw + stick angle, feed the game "forward" | |
+| M1 | Free camera on the right stick: after `CameraQuasiFPS::move` (0x0059E130, mode 10) rotate the game's eye/target around Leon to our own yaw; aim hands back to the game camera | yaw works (oliver, 2026-10-17); pitch still the game's |
+| M2 | Camera-relative movement: turn Leon toward camera yaw - stick angle, feed the game "forward" | built, untested |
 | M3 | Walk while aiming: move `pos_94` along the stick in the aim states, keep collision | |
 | M4 | Reload on the move, quick turn, button layout, ini | |
 
