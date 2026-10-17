@@ -228,6 +228,7 @@ static void RotatePitch(float* p, const float* pivot, float fx, float fz, float 
 }
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start);
+extern float g_aimFollow;
 void SetShotView(const float* eye, const float* tgt);
 bool GunLine(float* start, float* hit);
 
@@ -284,6 +285,9 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         if (cfg.centeredAim) {
             CenterAimCamera(eye, tgt, dt, !wasAimingBefore);
             SetShotView(eye, tgt);
+            // Once the aim has settled, show this camera as is: the game's smoothing would let the view trail Leon's
+            // turn by about 0.15 s.
+            if (g_aimFollow >= 1.0f) At<uint32_t>(Va(kCamSmooth), kCamSmoothCut) |= 1;
             // Measurement: while turning, how far the gun's line trails the camera, and the aim values behind it.
             static int s_diag = 0;
             static DWORD s_diagTick = 0;
@@ -427,7 +431,7 @@ void SetAimCentered();
 // the screen and the laser and bullets go where it shows (the game's shots follow the gun's line, like the laser).
 // Blended in over 0.2 s when the aim starts.
 static float g_aimDir[3];
-static float g_aimFollow = 0.0f;
+float g_aimFollow = 0.0f;
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     float p[3], laserYaw, pivotXZ[2];
