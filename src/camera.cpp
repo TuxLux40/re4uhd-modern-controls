@@ -146,10 +146,11 @@ static void WalkWithCollision(float* pos, float dx, float dz) {
     }
 }
 
-// Keeps the camera in front of walls: traces from Leon's head to the eye and pulls the eye in to the first hit.
-// Returns how much of the head-to-eye distance is left (1 = nothing in the way).
-static float CameraCollision(const float* pos, float* eye) {
-    const float head[3] = {pos[0], pos[1] + 1500.0f, pos[2]};
+// Keeps the camera in front of walls: traces from Leon (at the height of the game's own camera, so a camera pressed
+// in by walls ends up where the original one would be, not above his head) to the eye and pulls the eye in to the
+// first hit. Returns how much of that distance is left (1 = nothing in the way).
+static float CameraCollision(const float* pos, float pivotHeight, float* eye) {
+    const float head[3] = {pos[0], pos[1] + pivotHeight, pos[2]};
     float hit[3];
     if (!Trace(head, eye, hit, kTraceCamA, kTraceCamB)) return 1.0f;
     const float ex = eye[0] - head[0], ey = eye[1] - head[1], ez = eye[2] - head[2];
@@ -280,6 +281,8 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
 
     const float* pos = (const float*)(pl + pl::Pos);
     const float gameEye[3] = {eye[0], eye[1], eye[2]}, gameTgt[3] = {tgt[0], tgt[1], tgt[2]};
+    // The original camera's height above Leon's feet (about 1080, roughly his shoulders).
+    const float pivotHeight = Clamp(gameEye[1] - pos[1], 400.0f, 1800.0f);
     // Builds the rig from the game's camera. `raise` scales the extra height and the default tilt: 1 outdoors, less
     // when walls pull the camera in (corridors), so tight spaces get a camera closer to the original.
     auto build = [&](float raise) {
@@ -300,7 +303,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             tgt[1] += minEye - eye[1];
             eye[1] = minEye;
         }
-        return CameraCollision(pos, eye);
+        return CameraCollision(pos, pivotHeight, eye);
     };
     const float room = build(1.0f);
     if (room < 0.9f) build(room);
