@@ -50,7 +50,8 @@ searching the disassembly for `mov ecx,<object>` followed by `call`.
 | M1 | Free camera on the right stick: after `CameraQuasiFPS::move` (0x0059E130, mode 10) rotate the game's eye/target around Leon to our own yaw; aim hands back to the game camera | yaw works (oliver, 2026-10-17); free pitch + height offset added, untested |
 | M2 | Camera-relative movement: turn Leon toward camera yaw - stick angle, feed the game "forward" | works (oliver, 2026-10-17, with run forced via Steam Input); now `Run=Always` via `KEY_RUN` after KeyConvert |
 | M3 | Walk while aiming: move `pos_94` along the stick in the aim states, keep collision | |
-| M4 | Reload on the move, quick turn, button layout, ini | |
+| M4 | Reload on the move, quick turn, button layout | |
+| M5 | In-game options menu entries: run default (Always / OuterRing / Button), free / default camera, modern / tank controls (the ini keeps working as the fallback) | planned |
 
 The camera has to come first: RE4's camera sits behind Leon's yaw, so turning Leon toward the stick without a
 decoupled camera turns the camera too, and Leon would circle forever.
