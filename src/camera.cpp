@@ -288,6 +288,10 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
                 g_aimSeedTime -= dt;
                 *(float*)Va(kAimV) = g_aimSeed;
                 *(float*)Va(kAimVStart) = g_aimSeed;
+                // The aim sway (0x00684330) keeps the aim within a small range of an anchor angle in radians at
+                // (cPlayer+0x7D8)->+0x28 and only moves that anchor while the stick moves: set the anchor too.
+                const uintptr_t w = At<uintptr_t>(pl, 0x7D8);
+                if (w && Readable((void*)(w + 0x28), 4)) *(float*)(w + 0x28) = g_aimSeed * 1.5707963f;
             }
         }
         if (g_aimTraceFrames > 0) {
