@@ -395,21 +395,27 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_view = VIEW_FREE;
 }
 
-bool LaserAimPoint(float* out);
+bool LaserAimPoint(float* out, float* yaw, float* pivotXZ);
 void SetAimCentered();
 
 // Centered aim: turns the aim camera (eye kept) toward the laser's aim point, so the crosshair sits in the middle of
-// the screen and the laser and bullets go where it shows. The direction is smoothed (~80 ms) so the aim sway moves
-// the laser dot, not the whole view, and blended in over 0.2 s when the aim starts.
+// the screen and the laser and bullets go where it shows (the game's shots follow the gun's line, like the laser).
+// Blended in over 0.2 s when the aim starts.
 static float g_aimDir[3];
 static float g_aimFollow = 0.0f;
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
-    float p[3];
+    float p[3], laserYaw, pivotXZ[2];
     if (start) g_aimFollow = 0.0f;
-    if (!LaserAimPoint(p)) {
+    if (!LaserAimPoint(p, &laserYaw, pivotXZ)) {
         g_aimFollow = 0.0f;
         return;
+    }
+    // Turn the point with Leon by however far he turned since the laser was computed.
+    if (const uintptr_t pl = Player()) {
+        const float d = WrapPi(At<float>(pl, pl::Ang + 4) - laserYaw);
+        const float pivot[3] = {pivotXZ[0], 0.0f, pivotXZ[1]};
+        RotateYaw(p, pivot, cosf(d), sinf(d));
     }
     float cur[3] = {tgt[0] - eye[0], tgt[1] - eye[1], tgt[2] - eye[2]};
     const float dist = sqrtf(cur[0] * cur[0] + cur[1] * cur[1] + cur[2] * cur[2]);
@@ -418,11 +424,8 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     if (dist < 1.0f || wl < 50.0f) return;
     for (int i = 0; i < 3; ++i) cur[i] /= dist, want[i] /= wl;
     if (g_aimFollow == 0.0f) for (int i = 0; i < 3; ++i) g_aimDir[i] = want[i];
-    const float k = 1.0f - expf(-dt / 0.08f);
-    float n = 0.0f;
-    for (int i = 0; i < 3; ++i) g_aimDir[i] += (want[i] - g_aimDir[i]) * k, n += g_aimDir[i] * g_aimDir[i];
-    n = sqrtf(n);
-    for (int i = 0; i < 3; ++i) g_aimDir[i] /= n;
+    // Locked exactly onto the gun's line: the shots land in the middle of the crosshair; the aim sway moves the view.
+    for (int i = 0; i < 3; ++i) g_aimDir[i] = want[i];
     g_aimFollow = g_aimFollow + dt / 0.2f < 1.0f ? g_aimFollow + dt / 0.2f : 1.0f;
     const float b = g_aimFollow * g_aimFollow * (3.0f - 2.0f * g_aimFollow);
     float d[3], dl = 0.0f;

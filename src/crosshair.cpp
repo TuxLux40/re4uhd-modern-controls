@@ -19,6 +19,8 @@
 using namespace re4;
 
 static volatile DWORD g_laserTick = 0;  // last frame the game drew the laser
+static float g_laserYaw = 0.0f;         // Leon's yaw and position (x, z) at that moment
+static float g_laserPivot[2] = {};
 
 // --------------------------------------------------------------------------------------------------- laser hook
 typedef void(__fastcall* PFN_Laser)(uintptr_t self, void* edx, char draw, char b, char c);
@@ -26,7 +28,16 @@ static PFN_Laser g_origLaser = nullptr;
 
 static void __fastcall HookLaser(uintptr_t self, void* edx, char draw, char b, char c) {
     g_origLaser(self, edx, draw, b, c);
-    if (draw) g_laserTick = GetTickCount();
+    if (draw) {
+        g_laserTick = GetTickCount();
+        // Leon's heading when the laser was computed: the camera may run a frame later, after he turned further.
+        const uintptr_t pl = *(uintptr_t*)Va(kPlayerPtr);
+        if (pl >= 0x10000 && Readable((void*)pl, 0x200)) {
+            g_laserYaw = At<float>(pl, pl::Ang + 4);
+            g_laserPivot[0] = At<float>(pl, pl::Pos);
+            g_laserPivot[1] = At<float>(pl, pl::Pos + 8);
+        }
+    }
 }
 
 static volatile DWORD g_centeredTick = 0;  // last frame the camera was turned to look at the aim point
@@ -68,9 +79,12 @@ static void AimPoint(float* out) {
 }
 
 // For the camera: the point the crosshair marks while the laser is shown.
-bool LaserAimPoint(float* out) {
+bool LaserAimPoint(float* out, float* yaw, float* pivotXZ) {
     if (GetTickCount() - g_laserTick > 100) return false;
     AimPoint(out);
+    *yaw = g_laserYaw;
+    pivotXZ[0] = g_laserPivot[0];
+    pivotXZ[1] = g_laserPivot[1];
     return true;
 }
 
