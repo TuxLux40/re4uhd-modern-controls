@@ -22,11 +22,29 @@ Addresses below are written as VA at the default base 0x400000. Subtract 0x40000
 | player state functions | `pl_R1_Walk`, `pl_R1_Run`, `pl_R1_Back`, `pl_R1_Turn`, `pl_R1_Turn180` (patterns in `MouseTurning.cpp`) | `r_no_*` bytes in `cModel` select the routine |
 | root-motion off | `cModel.Motion_1D8.Mot_attr_40 = 4` | MotionMove applies no rotation/translation (re4_tweaks' mouse turning relies on it) |
 
+## Confirmed in this build (2026-10-17)
+
+All re4_tweaks patterns above match exactly once. Resolved (VA at base 0x400000):
+
+| What | VA | Notes |
+|---|---|---|
+| `pPL` | 0x00C57054 | `cPlayer**` |
+| `pG` | 0x00C06F3C | `GLOBAL_WK**` |
+| `CamCtrl` | 0x00C702D0 | the object; `m_QuasiFPS_278` at 0x00C70548 |
+| `Key_btn_on` | 0x00C62F08 | |
+| `Joy[4]` | 0x00C63008 | |
+| `CameraControl::move` | 0x006F6EF0 | thiscall, reached via ILT thunk 0x00401B4A. Switches on `r0_34` (camera mode), the mode writes `m_camera_38` (campos/target/roll/fovy), then smoothing (0x006F2AD0, 0x006F2DA0) and the view matrix build (0x0059E660 on `Camera_60`). Mode 7 (0x006F3220) reads Leon's yaw (`pPL+0xA4`). |
+| `pl_R1_Walk` / `Run` / `Turn180` | 0x00763331 / 0x00763771 / 0x00763DC5 | pattern hits (inside the functions) |
+
+Tooling notes: calls go through 5-byte `jmp` thunks (incremental linking), so call sites name the thunk, not the
+function. Ghidra's decompiler drops the implicit `this` of thiscall callees; find methods of a global object by
+searching the disassembly for `mov ecx,<object>` followed by `call`.
+
 ## Plan
 
 | Milestone | Goal | Status |
 |---|---|---|
-| M0 | Proxy loads under Proton, forwards XInput, logs the stick | built, untested |
+| M0 | Proxy loads under Proton, forwards XInput, logs the stick; read-only probe on `CameraControl::move` logs the camera mode | built, untested |
 | M1 | Free orbit camera on the right stick (hook the QFPS camera update, write our own campos/target outside aim) | |
 | M2 | Camera-relative movement: turn Leon toward camera yaw + stick angle, feed the game "forward" | |
 | M3 | Walk while aiming: move `pos_94` along the stick in the aim states, keep collision | |
