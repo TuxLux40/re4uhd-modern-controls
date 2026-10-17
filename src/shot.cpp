@@ -94,11 +94,27 @@ static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, fl
     g_lineHit(s, g_gunHit, 0, 0, &em, &poly);
     g_gunTick = GetTickCount();
 
-    if (!CastTarget(start)) return;
+    static int s_diag = 0;
+    static DWORD s_diagTick = 0;
+    const DWORD now = GetTickCount();
+    const bool diag = s_diag < 150 && now - s_diagTick >= 100;
+    if (diag) s_diagTick = now, ++s_diag;
+    if (!CastTarget(start)) {
+        if (diag)
+            Log("laser: no target (centered %d, view age %lu)", AimCentered() ? 1 : 0, (unsigned long)(now - g_viewTick));
+        return;
+    }
     float dir[3] = {end[0] - start[0], end[1] - start[1], end[2] - start[2]};
     const float len = Normalize(dir);
-    float nd[3], angle;
-    if (len <= 0.0f || !Steer(start, dir, nd, &angle)) return;
+    float nd[3], angle = -1.0f;
+    const bool ok = len > 0.0f && Steer(start, dir, nd, &angle);
+    if (diag) {
+        float w[3] = {g_target[0] - start[0], g_target[1] - start[1], g_target[2] - start[2]};
+        const float wl = Normalize(w);
+        Log("laser: %s gun %.1f -> target %.1f (%.2f deg, target %.0f away) len %.0f", ok ? "turned" : "LEFT",
+            atan2f(dir[0], dir[2]) * 57.3f, atan2f(w[0], w[2]) * 57.3f, acosf(fminf(1.0f, Dot(dir, w))) * 57.3f, wl, len);
+    }
+    if (!ok) return;
     for (int i = 0; i < 3; ++i) end[i] = start[i] + nd[i] * len;
 }
 
