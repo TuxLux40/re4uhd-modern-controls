@@ -290,6 +290,22 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             const float stepLen = cfg.aimWalkSpeed * mag * dt;
             WalkWithCollision(pos, sinf(yaw) * stepLen, cosf(yaw) * stepLen);
         }
+        // Turning while the game ignores the aim stick (reloading): while aiming, the game turns Leon itself, through
+        // his yaw and the aim's sideways offset (cPlayer+0x448). If neither moved although the stick is pushed, turn
+        // him here, like the remakes allow while reloading.
+        {
+            static float lastYaw = 0.0f, lastSide = 0.0f;
+            static bool haveLast = false;
+            float* yaw = (float*)(pl + pl::Ang) + 1;
+            float* side = (float*)(pl + 0x448);
+            const float want = g_stickRx * 2.0f * dt;  // rad this frame at about 115 degrees/s at full deflection
+            if (stance && haveLast && fabsf(want) > 1e-4f &&
+                fabsf(WrapPi(*yaw - lastYaw)) + fabsf(*side - lastSide) < 0.25f * fabsf(want))
+                *yaw = WrapPi(*yaw - want);
+            lastYaw = *yaw;
+            lastSide = *side;
+            haveLast = stance;
+        }
         if (cfg.aimWalk) KeepAshleyOnGround();
         return;
     }
