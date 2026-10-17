@@ -22,6 +22,20 @@ constexpr uint8_t kSigQfpsMove[] = {0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x9C, 0x01, 0x
 constexpr uint32_t kFnKeyConvert = 0x00567360;
 constexpr uint8_t kSigKeyConvert[] = {0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x7C, 0x05, 0x00, 0x00};  // sub esp,0x57C
 
+// JOY Joy[4] (re4_tweaks SDK/pad.h); the weapon aim (PlWepLockCtrl, 0x00688090) reads Joy[0]'s left stick and on bits.
+// KeyConvert fills it from the pad device (0x00964670(0): floats +0xC/+0x10 left stick, +0x14/+0x18 right stick,
+// scaled to +-127, dead zone 31, then +-63). While a bound action such as aim is held it swaps the sticks: Joy left
+// <- right stick, Joy right <- left stick (0x009679BD..).
+constexpr uint32_t kJoy0 = 0x00863008;
+namespace joy {
+constexpr uint32_t LX = 0x0, LY = 0x4;  // int
+constexpr uint32_t RX = 0x8, RY = 0x9;  // int8
+constexpr uint32_t On = 0x14;           // JOY_BTN, low nibble = digital directions from the stick
+}  // namespace joy
+// Read by PlWepLockCtrl: 1 selects a separate aim path (mouse aiming, presumably).
+constexpr uint32_t kAimDeviceFlag = 0x00E224B0;
+constexpr uint32_t kAimRamp = 0x00866C1C;  // float, grows while the aim stick is held
+
 // KEY_BTN bits (re4_tweaks SDK/pad.h)
 constexpr uint64_t KEY_KAMAE = 0x10;         // aim (weapon ready)
 constexpr uint64_t KEY_KAMAE_KNIFE = 0x800;  // knife ready

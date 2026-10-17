@@ -38,6 +38,8 @@ All re4_tweaks patterns above match exactly once. Resolved (VA at base 0x400000)
 | `CameraQuasiFPS::move` | 0x0059E130 | thiscall, ECX = CamCtrl+0x278; mode 10 copies its CamPoint (+0xA4) into `m_camera_38` |
 | `pl_R1_Walk` / `Run` / `Turn180` | 0x00763331 / 0x00763771 / 0x00763DC5 | pattern hits (inside the functions) |
 
+| `Joy[0]` | 0x00C63008 | Filled in KeyConvert from the pad device object `0x00964670(0)` (floats: +0xC/+0x10 left stick, +0x14/+0x18 right stick), x127, clamp, dead zone 31 -> +-63. While a bound action (aim) is held the branch at 0x009679BD swaps the sticks: Joy left <- right stick. `PlWepLockCtrl` (0x00688090) aims from Joy left + on bits (0x00C6301C). `0x012224B0 == 1` takes a separate (mouse) aim path. |
+
 Tooling notes: calls go through 5-byte `jmp` thunks (incremental linking), so call sites name the thunk, not the
 function. Ghidra's decompiler drops the implicit `this` of thiscall callees; find methods of a global object by
 searching the disassembly for `mov ecx,<object>` followed by `call`.
@@ -49,7 +51,7 @@ searching the disassembly for `mov ecx,<object>` followed by `call`.
 | M0 | Proxy loads under Proton, forwards XInput, logs the stick; read-only probe on `CameraControl::move` logs the camera mode | done 2026-10-17 (loads at base 0x400000; gameplay camera = mode 10) |
 | M1 | Free camera on the right stick: after `CameraQuasiFPS::move` (0x0059E130, mode 10) rotate the game's eye/target around Leon to our own yaw; aim hands back to the game camera | yaw works (oliver, 2026-10-17); free pitch + height offset work (oliver, 2026-10-17) |
 | M2 | Camera-relative movement: turn Leon toward camera yaw - stick angle, feed the game "forward" | works (oliver, 2026-10-17, with run forced via Steam Input); `Run=Always` via `KEY_RUN` after KeyConvert works |
-| M3 | Walk while aiming: right stick goes to the game's aim (left stick slot), left stick moves `pos_94` relative to the aim camera | built, untested (collision unknown) |
+| M3 | Walk while aiming: the game already aims with the right stick (KeyConvert swaps the sticks into `Joy[0]` while aim is held); the mod hides the left stick and moves `pos_94` along it relative to the aim camera | walking confirmed; aim fix built, untested; collision unknown |
 | M4 | Reload on the move, quick turn, button layout | |
 | M5 | In-game options menu entries: run default (Always / OuterRing / Button), free / default camera, modern / tank controls (the ini keeps working as the fallback) | planned |
 

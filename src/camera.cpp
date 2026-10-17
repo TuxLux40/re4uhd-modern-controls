@@ -15,9 +15,10 @@
 // or cleared according to Config::run.
 //
 // While aiming the game's own aim camera runs. Aiming starts by turning Leon by the current yaw offset, so he faces
-// where the free camera looked; the free camera follows the game's yaw until the aim ends. With Config::aimWalk the
-// pad thread hands the game the right stick as its left stick (so the right stick aims) and keeps the left stick to
-// walk: the camera hook moves Leon's position along it, relative to the aim camera, with no animation (he glides).
+// where the free camera looked; the free camera follows the game's yaw until the aim ends. The game aims with the
+// right stick (UHD swaps the sticks while the aim action is held). With Config::aimWalk the pad thread keeps the left
+// stick from the game and the camera hook moves Leon's position along it, relative to the aim camera, with no
+// animation (he glides).
 #include "common.h"
 #include "re4.h"
 #include "camera.h"
@@ -80,9 +81,9 @@ void FreeCameraPad(XGamepad& pad) {
                 g_aimMoveX = ax;
                 g_aimMoveY = ay;
             }
-            pad.sThumbLX = pad.sThumbRX;  // the game aims with its left stick
-            pad.sThumbLY = pad.sThumbRY;
-            pad.sThumbRX = pad.sThumbRY = 0;
+            // The game already aims with the right stick: while the aim action is held, KeyConvert fills Joy[0]'s
+            // left stick (which PlWepLockCtrl reads) from the pad's right stick. The left stick is only ours to walk.
+            pad.sThumbLX = pad.sThumbLY = 0;
         }
         return;
     }
