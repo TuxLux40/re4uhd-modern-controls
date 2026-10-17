@@ -90,10 +90,13 @@ static bool CastTarget(const float* muzzle) {
 // Direction from `from` that hits the target, turned the way the gun's line would have to turn to get there.
 // Returns false (leave the shot alone) when there is no target or it is far off the gun's line.
 static bool Steer(const float* from, const float* shotDir, float* out, float* angle) {
-    if (GetTickCount() - g_targetTick > 100 || GetTickCount() - g_gunTick > 100) return false;
-    float gun[3] = {g_gunEnd[0] - g_gunStart[0], g_gunEnd[1] - g_gunStart[1], g_gunEnd[2] - g_gunStart[2]};
+    if (GetTickCount() - g_targetTick > 100) return false;
     float want[3] = {g_target[0] - from[0], g_target[1] - from[1], g_target[2] - from[2]};
-    if (!Normalize(gun) || !Normalize(want)) return false;
+    if (!Normalize(want)) return false;
+    float gun[3] = {g_gunEnd[0] - g_gunStart[0], g_gunEnd[1] - g_gunStart[1], g_gunEnd[2] - g_gunStart[2]};
+    // No fresh gun line (the laser skips some frames while firing): straight at the target, without the spread.
+    if (GetTickCount() - g_gunTick > 100 || !Normalize(gun))
+        for (int i = 0; i < 3; ++i) gun[i] = shotDir[i];
     const float d = Dot(gun, want);
     if (d < 0.5f) return false;  // target behind or beside the gun
     for (int i = 0; i < 3; ++i) out[i] = shotDir[i] + want[i] - gun[i];
@@ -157,8 +160,8 @@ static void __cdecl HookBullet(uintptr_t owner, float* from, float* to, uint32_t
         }
         if (logged < 5) {
             ++logged;
-            Log("shot: weapon %u left alone (target %s, gun line %s)", wep & 0xFFFF,
-                GetTickCount() - g_targetTick > 100 ? "stale" : "ok", GetTickCount() - g_gunTick > 100 ? "stale" : "ok");
+            Log("shot: weapon %u left alone (target %s)", wep & 0xFFFF,
+                GetTickCount() - g_targetTick > 100 ? "stale" : "ok");
         }
     }
     g_origBullet(owner, from, to, wep, a5, a6);
