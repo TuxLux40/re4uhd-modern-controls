@@ -80,6 +80,9 @@ extern "C" void __cdecl AdjustShotRay(uint32_t* regs, float** args) {
     const uint32_t mode = (uint32_t)(uintptr_t)args[2];
     float ls[3], le[3];
     if (!Readable(from, 12) || !Readable(to, 12) || !LaserLine(ls, le)) return;
+    // Only Leon's own shots: they start at his gun, where the laser starts (enemy weapons may use this raycast too).
+    const float ox = from[0] - ls[0], oy = from[1] - ls[1], oz = from[2] - ls[2];
+    if (ox * ox + oy * oy + oz * oz > 400.0f * 400.0f) return;
 
     // What is in the middle of the screen.
     static float camFrom[3], camTo[3], hit[3];
