@@ -60,11 +60,19 @@ constexpr uint32_t kAimRamp = 0x00866C1C;  // float, grows while the aim stick i
 constexpr uint32_t kAimV = 0x0087A7D8;
 constexpr uint32_t kAimVStart = 0x0087A7D4;
 constexpr uint32_t kAimVBlend = 0x0087A7DC;
-// Shot raycast (0x00684DB0): line from the muzzle against the world (Trace mask 0/0x400000) and enemies, used by
-// every gunshot (0x00686AD0 from the muzzle, 0x00687300 from the shot origin). ECX = int* hit enemy out, EDX = shot
-// type, EDI = float[3] hit point out; stack: from, to, mode (caller cleans up).
-constexpr uint32_t kFnShotRay = 0x00284DB0;
-constexpr uint8_t kSigShotRay[] = {0x55, 0x8B, 0xEC, 0x81, 0xEC, 0xA4, 0x00, 0x00, 0x00};
+// Bullet (0x00686C40), cdecl (owner, float* from, float* to, weapon id, int, float): the shot itself, used by
+// every attacker. Leon's gun routines (0x008FD410 and friends) pass the muzzle and muzzle + gun direction (plus
+// random spread); with mouse aim they first bend that direction toward the cursor (0x00683520).
+constexpr uint32_t kFnBullet = 0x00286C40;
+constexpr uint8_t kSigBullet[] = {0x55, 0x8B, 0xEC, 0x81, 0xEC, 0xD8, 0x00, 0x00, 0x00, 0xA1};
+// Laser line (0x0073DC60), thiscall (float* start, float* end), ret 8: the gun's line from the muzzle, before
+// LaserUpdate cuts it at the first hit and draws it.
+constexpr uint32_t kFnLaserLine = 0x0033DC60;
+constexpr uint8_t kSigLaserLine[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x38, 0xA1};
+// Line hit test (0x005BC050), cdecl (float* from, float* to, int, int, int* hit enemy out, int* poly out): world and
+// enemies; cuts `to` at the nearest hit. LaserUpdate uses it on the laser.
+constexpr uint32_t kFnLineHit = 0x001BC050;
+constexpr uint8_t kSigLineHit[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x6C, 0xA1};
 // Partner (cSubChar: Ashley, Luis...) hit handling, thiscall, once per frame. cEm-style cDmgInfo at +0x328 (re4_tweaks
 // SDK/em.h): +0x32C pending flag, +0x32E attack type. With the armour costume (pG+0x4FCB == 2) it drops the attack
 // types of Leon's guns and knife and only lets explosions and the like through.

@@ -42,7 +42,7 @@ static void __fastcall HookLaser(uintptr_t self, void* edx, char draw, char b, c
 
 static volatile DWORD g_centeredTick = 0;  // last frame the camera was turned to look at the aim point
 void SetAimCentered() { g_centeredTick = GetTickCount(); }
-static bool AimCentered() { return GetTickCount() - g_centeredTick < 100; }
+bool AimCentered() { return GetTickCount() - g_centeredTick < 100; }
 
 // The laser's end point through the game's own camera. CameraControl::Camera_60 (copied to the global render camera
 // every frame) holds at +0 the camera-to-world matrix (GX 3x4: rotation columns, eye in the last column; the camera
@@ -56,9 +56,13 @@ static bool AimCentered() { return GetTickCount() - g_centeredTick < 100; }
 // The distance eases instead: quickly onto nearer hits, slowly out to far ones.
 static float g_depth = -1.0f;
 static DWORD g_depthTick = 0;
+bool GunLine(float* start, float* hit);
 static void AimPoint(float* out) {
+    // The gun's own line: with the centered aim the drawn laser is turned to the crosshair, which the camera follows.
+    float gs[3], ge[3];
     const float* s = (const float*)Va(kLaserStart);
     const float* e = (const float*)Va(kLaserEnd);
+    if (GunLine(gs, ge)) s = gs, e = ge;
     const float dx = e[0] - s[0], dy = e[1] - s[1], dz = e[2] - s[2];
     const float len = sqrtf(dx * dx + dy * dy + dz * dz);
     const DWORD now = GetTickCount();
@@ -76,15 +80,6 @@ static void AimPoint(float* out) {
     }
     const float k = g_depth / len;
     out[0] = s[0] + dx * k, out[1] = s[1] + dy * k, out[2] = s[2] + dz * k;
-}
-
-// The gun's line as the laser shows it (current while the laser is drawn).
-bool LaserLine(float* start, float* end) {
-    if (GetTickCount() - g_laserTick > 100) return false;
-    const float* s = (const float*)Va(kLaserStart);
-    const float* e = (const float*)Va(kLaserEnd);
-    for (int i = 0; i < 3; ++i) start[i] = s[i], end[i] = e[i];
-    return true;
 }
 
 // For the camera: the point the crosshair marks while the laser is shown.
