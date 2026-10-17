@@ -67,7 +67,7 @@ To uninstall, delete `Bin32/xinput1_3.dll` and the `RE4ModernControls.ini` / `.l
 | **Left stick** | Move toward that direction on screen | Walk (Leon glides) |
 | **Right stick** | Turn the camera | Aim |
 | **Run button** | Hold to walk instead of run | |
-| **Aim** | Leon turns to where the camera looks | |
+| **Aim** | Leon turns to where the camera looks. Tap it to recentre the camera behind Leon | |
 | **D-pad** | Classic tank controls, untouched | |
 
 Everything else (shoot, reload, knife, actions, quick turn) stays on the game's own buttons.
