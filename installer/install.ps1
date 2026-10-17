@@ -105,7 +105,7 @@ function Get-Current($key, $default) {
     return $default
 }
 $run = Get-Current "Run" "Always"; $walk = Get-Current "Walk" "1"; $cross = Get-Current "Crosshair" "1"
-$height = Get-Current "Height" "250"; $invy = Get-Current "InvertY" "0"
+$height = Get-Current "Height" "0"; $invy = Get-Current "InvertY" "0"
 
 function Ask-Choice($question, $default, [string[]]$options) {
     Write-Host ""; Write-Host $question
@@ -132,10 +132,10 @@ if (-not $Defaults) {
     Write-Host ""
     $walk = Ask-YesNo "Walk with the left stick while aiming?" $walk
     $cross = Ask-YesNo "Show a crosshair where the laser points?" $cross
-    $d = if ($height -eq "0") { 2 } else { 1 }
-    $height = switch (Ask-Choice "Camera position" $d @(
-            "A bit higher, looking slightly down (recommended)",
-            "Same height as the original game")) { "2" { "0" } default { "250" } }
+    $d = if ($height -eq "0") { 1 } else { 2 }
+    $height = switch (Ask-Choice "Camera height" $d @(
+            "Same height as the original game (recommended)",
+            "A bit higher")) { "2" { "250" } default { "0" } }
     Write-Host ""
     $invy = Ask-YesNo "Invert camera up/down?" $invy
 }
@@ -146,7 +146,7 @@ function Set-Key($key, $value) { $script:text = [regex]::Replace($script:text, "
 if ($run -ne "Always") { Set-Key "Run" $run }
 if ($walk -ne "1") { Set-Key "Walk" $walk }
 if ($cross -ne "1") { Set-Key "Crosshair" $cross }
-if ($height -eq "0") { Set-Key "Height" "0"; Set-Key "DefaultPitch" "0" }
+if ($height -ne "0") { Set-Key "Height" $height }
 if ($invy -ne "0") { Set-Key "InvertY" $invy }
 [System.IO.File]::WriteAllText($Ini, ($text -replace "`n", "`r`n"), (New-Object System.Text.UTF8Encoding $false))
 Write-Host ""

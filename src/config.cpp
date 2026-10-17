@@ -49,7 +49,7 @@ void LoadConfig() {
     c.aimWalkSpeed = ReadFloat(path, "Aim", "WalkSpeed", 1300.0f);
     c.crosshair = ReadFloat(path, "Aim", "Crosshair", 1.0f) != 0.0f;
     c.defaultPitch = ReadFloat(path, "Camera", "DefaultPitch", 12.0f) * kDeg;
-    c.height = ReadFloat(path, "Camera", "Height", 250.0f);
+    c.height = ReadFloat(path, "Camera", "Height", 0.0f);
     c.yawSpeed = ReadFloat(path, "Camera", "YawSpeed", 170.0f) * kDeg;
     c.pitchSpeed = ReadFloat(path, "Camera", "PitchSpeed", 100.0f) * kDeg;
     c.invertX = ReadFloat(path, "Camera", "InvertX", 0.0f) != 0.0f;

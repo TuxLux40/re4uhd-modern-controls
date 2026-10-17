@@ -45,6 +45,7 @@ static volatile float g_aimMoveX = 0.0f, g_aimMoveY = 0.0f;  // left stick while
 // Camera state (game thread).
 static volatile float g_yaw = 0.0f;  // world yaw the free camera looks along
 static float g_pitch = 0.0f;         // radians on top of the game's own camera pitch
+static float g_appliedDefaultPitch = 0.0f;  // Config::defaultPitch that g_pitch currently includes
 static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
@@ -68,7 +69,6 @@ static bool Aiming() {
 }
 
 void FreeCameraPad(XGamepad& pad) {
-    ConfigTick();
     const Config& c = Cfg();
     g_stickRx = DeadZone(pad.sThumbRX / 32767.0f, 0.2f) * (c.invertX ? -1.0f : 1.0f);
     g_stickRy = DeadZone(pad.sThumbRY / 32767.0f, 0.2f) * (c.invertY ? -1.0f : 1.0f);
@@ -146,11 +146,12 @@ static void WalkWithCollision(float* pos, float dx, float dz) {
     }
 }
 
-// Keeps the camera in front of walls: traces from Leon (at the height of the game's own camera, so a camera pressed
-// in by walls ends up where the original one would be, not above his head) to the eye and pulls the eye in to the
-// first hit. Returns how much of that distance is left (1 = nothing in the way).
-static float CameraCollision(const float* pos, float pivotHeight, float* eye) {
-    const float head[3] = {pos[0], pos[1] + pivotHeight, pos[2]};
+// Keeps the camera in front of walls: traces from a pivot to the eye and pulls the eye in to the first hit. The pivot
+// is beside Leon's shoulder, at the original camera's height and sideways offset, so the line runs along the view
+// direction: a camera pressed in by walls dollies in and keeps Leon on the left of the frame, at the original framing
+// height. Returns how much of that distance is left (1 = nothing in the way).
+static float CameraCollision(const float* pivot, float* eye) {
+    const float* head = pivot;
     float hit[3];
     if (!Trace(head, eye, hit, kTraceCamA, kTraceCamB)) return 1.0f;
     const float ex = eye[0] - head[0], ey = eye[1] - head[1], ez = eye[2] - head[2];
@@ -222,7 +223,11 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_view = VIEW_NONE;
     const uintptr_t pl = Player();
     if (!pl) return;
+    ConfigTick();  // here, not in the pad poll: the game stops polling the pad while its window is unfocused
     const Config& cfg = Cfg();
+    if (g_haveYaw && cfg.defaultPitch != g_appliedDefaultPitch)  // a new resting angle from the ini applies right away
+        g_pitch += cfg.defaultPitch - g_appliedDefaultPitch;
+    g_appliedDefaultPitch = cfg.defaultPitch;
 
     float* eye = (float*)(self + cc::CameraPoint);
     float* tgt = eye + 3;
@@ -303,7 +308,11 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             tgt[1] += minEye - eye[1];
             eye[1] = minEye;
         }
-        return CameraCollision(pos, pivotHeight, eye);
+        // Sideways offset of the eye from Leon in the camera's frame (right = (-cos yaw, 0, sin yaw)).
+        const float rx = -cosf(g_yaw), rz = sinf(g_yaw);
+        const float side = (eye[0] - pos[0]) * rx + (eye[2] - pos[2]) * rz;
+        const float shoulder[3] = {pos[0] + rx * side, pos[1] + pivotHeight, pos[2] + rz * side};
+        return CameraCollision(shoulder, eye);
     };
     const float room = build(1.0f);
     if (room < 0.9f) build(room);
