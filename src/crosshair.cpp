@@ -78,6 +78,15 @@ static void AimPoint(float* out) {
     out[0] = s[0] + dx * k, out[1] = s[1] + dy * k, out[2] = s[2] + dz * k;
 }
 
+// The gun's line as the laser shows it (current while the laser is drawn).
+bool LaserLine(float* start, float* end) {
+    if (GetTickCount() - g_laserTick > 100) return false;
+    const float* s = (const float*)Va(kLaserStart);
+    const float* e = (const float*)Va(kLaserEnd);
+    for (int i = 0; i < 3; ++i) start[i] = s[i], end[i] = e[i];
+    return true;
+}
+
 // For the camera: the point the crosshair marks while the laser is shown.
 bool LaserAimPoint(float* out, float* yaw, float* pivotXZ) {
     if (GetTickCount() - g_laserTick > 100) return false;

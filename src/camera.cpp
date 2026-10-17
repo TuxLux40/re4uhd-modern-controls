@@ -228,6 +228,7 @@ static void RotatePitch(float* p, const float* pivot, float fx, float fz, float 
 }
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start);
+void SetShotView(const float* eye, const float* tgt);
 
 typedef void(__fastcall* PFN_QfpsMove)(uintptr_t self, void* edx);
 static PFN_QfpsMove g_origQfpsMove = nullptr;
@@ -279,7 +280,10 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         }
         g_yaw = gameYaw;
         g_view = VIEW_AIM;
-        if (cfg.centeredAim) CenterAimCamera(eye, tgt, dt, !wasAimingBefore);
+        if (cfg.centeredAim) {
+            CenterAimCamera(eye, tgt, dt, !wasAimingBefore);
+            SetShotView(eye, tgt);
+        }
         const float ax = g_aimMoveX, ay = g_aimMoveY;
         // Only while Leon is actually in his aim or knife stance (r_no_0 0, r_no_1 6 / 0xB): a hit or stagger with the
         // aim button still held must not slide him around.
@@ -396,6 +400,8 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
 }
 
 bool LaserAimPoint(float* out, float* yaw, float* pivotXZ);
+void SetShotView(const float* eye, const float* tgt);
+void InitShotHook();
 void SetAimCentered();
 
 // Centered aim: turns the aim camera (eye kept) toward the laser's aim point, so the crosshair sits in the middle of
@@ -505,6 +511,7 @@ bool InitCameraHooks() {
                           (void**)&g_origQfpsMove, "CameraQuasiFPS::move");
     Hook(kFnKeyConvert, kSigKeyConvert, sizeof(kSigKeyConvert), (void*)HookKeyConvert, (void**)&g_origKeyConvert,
          "KeyConvert");
+    InitShotHook();
     Hook(kFnPartnerHit, kSigPartnerHit, sizeof(kSigPartnerHit), (void*)HookPartnerHit, (void**)&g_origPartnerHit,
          "partner hit");
     return cam;
