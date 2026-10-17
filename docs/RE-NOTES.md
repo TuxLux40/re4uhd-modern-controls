@@ -34,6 +34,8 @@ All re4_tweaks patterns above match exactly once. Resolved (VA at base 0x400000)
 | `Key_btn_on` | 0x00C62F08 | |
 | `Joy[4]` | 0x00C63008 | |
 | `CameraControl::move` | 0x006F6EF0 | thiscall, reached via ILT thunk 0x00401B4A. Switches on `r0_34` (camera mode), the mode writes `m_camera_38` (campos/target/roll/fovy), then smoothing (0x006F2AD0, 0x006F2DA0) and the view matrix build (0x0059E660 on `Camera_60`). Mode 7 (0x006F3220) reads Leon's yaw (`pPL+0xA4`). |
+| `KeyConvert` | 0x00967360 | `void(void)`, 13.5 KB: turns the pad into `Key_btn_on`/`trg` bits each frame; called from 0x5AC058 and 0x654B80 via thunk 0x407509. `pl_R1_Walk`/`pl_R1_Run` test `Key_btn_on & KEY_RUN (0x40)`. |
+| `CameraQuasiFPS::move` | 0x0059E130 | thiscall, ECX = CamCtrl+0x278; mode 10 copies its CamPoint (+0xA4) into `m_camera_38` |
 | `pl_R1_Walk` / `Run` / `Turn180` | 0x00763331 / 0x00763771 / 0x00763DC5 | pattern hits (inside the functions) |
 
 Tooling notes: calls go through 5-byte `jmp` thunks (incremental linking), so call sites name the thunk, not the
@@ -45,8 +47,8 @@ searching the disassembly for `mov ecx,<object>` followed by `call`.
 | Milestone | Goal | Status |
 |---|---|---|
 | M0 | Proxy loads under Proton, forwards XInput, logs the stick; read-only probe on `CameraControl::move` logs the camera mode | done 2026-10-17 (loads at base 0x400000; gameplay camera = mode 10) |
-| M1 | Free camera on the right stick: after `CameraQuasiFPS::move` (0x0059E130, mode 10) rotate the game's eye/target around Leon to our own yaw; aim hands back to the game camera | yaw works (oliver, 2026-10-17); pitch still the game's |
-| M2 | Camera-relative movement: turn Leon toward camera yaw - stick angle, feed the game "forward" | built, untested |
+| M1 | Free camera on the right stick: after `CameraQuasiFPS::move` (0x0059E130, mode 10) rotate the game's eye/target around Leon to our own yaw; aim hands back to the game camera | yaw works (oliver, 2026-10-17); free pitch + height offset added, untested |
+| M2 | Camera-relative movement: turn Leon toward camera yaw - stick angle, feed the game "forward" | works (oliver, 2026-10-17, with run forced via Steam Input); now `Run=Always` via `KEY_RUN` after KeyConvert |
 | M3 | Walk while aiming: move `pos_94` along the stick in the aim states, keep collision | |
 | M4 | Reload on the move, quick turn, button layout, ini | |
 

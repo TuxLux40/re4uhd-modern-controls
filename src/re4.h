@@ -18,10 +18,14 @@ constexpr uint8_t kSigCamCtrlMove[] = {0x55, 0x8B, 0xEC, 0xA1};  // push ebp; mo
 // then copies its CamPoint (QuasiFPS + 0xA4) into CameraControl::m_camera_38.
 constexpr uint32_t kFnQfpsMove = 0x0019E130;
 constexpr uint8_t kSigQfpsMove[] = {0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x9C, 0x01, 0x00, 0x00};  // sub esp,0x19C
+// cdecl void KeyConvert(): turns the pad into KEY_BTN bits each frame (writes kKeyBtnOn).
+constexpr uint32_t kFnKeyConvert = 0x00567360;
+constexpr uint8_t kSigKeyConvert[] = {0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x7C, 0x05, 0x00, 0x00};  // sub esp,0x57C
 
 // KEY_BTN bits (re4_tweaks SDK/pad.h)
 constexpr uint64_t KEY_KAMAE = 0x10;         // aim (weapon ready)
 constexpr uint64_t KEY_KAMAE_KNIFE = 0x800;  // knife ready
+constexpr uint64_t KEY_RUN = 0x40;
 
 // cModel / cCoord (player)
 namespace pl {

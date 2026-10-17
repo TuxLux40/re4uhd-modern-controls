@@ -1,17 +1,25 @@
-// Free camera, M1 (yaw only).
+// Free camera and camera-relative movement.
 //
-// The game's gameplay camera (CameraQuasiFPS, camera mode 10) always sits behind Leon's yaw. Rather than draw our own
-// rig, the mod keeps a world yaw of its own (g_yaw, turned by the right stick) and, after the game's QuasiFPS update,
-// rotates the game's eye and target around Leon's vertical axis by (g_yaw - the game's camera yaw). Framing, height,
-// shoulder offset and FOV stay exactly as the game draws them; only the heading is ours.
+// Camera: the game's gameplay camera (CameraQuasiFPS, camera mode 10) always sits behind Leon's yaw. Rather than draw
+// our own rig, the mod keeps a world yaw and a pitch of its own (turned by the right stick, nothing springs back) and,
+// after the game's QuasiFPS update, moves the game's eye and target as one rig: raised by Config::height, rotated
+// around Leon's vertical axis by (g_yaw - the game's camera yaw), then tilted around a pivot at the game's target
+// height by g_pitch. FOV and shoulder offset stay the game's.
 //
-// Yaw convention (same as Leon's ang.y): yaw = atan2(dx, dz). Turning the view right lowers the yaw.
+// Yaw convention (same as Leon's ang.y): yaw = atan2(dx, dz). Turning the view right lowers the yaw. Pitch > 0 lifts
+// the camera and looks down.
 //
-// While aiming the game's own aim camera runs untouched. Aiming starts by turning Leon by the current offset, so he
-// faces where the free camera looked, and the free camera then follows the game's yaw until the aim ends.
+// Movement: the pad thread turns the left stick into a world yaw for Leon (camera yaw minus stick angle) and hands the
+// game a plain "forward", so the game walks/runs him forward and never tank-turns or backpedals; the camera hook turns
+// Leon toward that yaw every frame. After the game converts the pad to action bits (KeyConvert), the run bit is set
+// or cleared according to Config::run.
+//
+// While aiming the game's own aim camera and tank aim run untouched. Aiming starts by turning Leon by the current yaw
+// offset, so he faces where the free camera looked; the free camera follows the game's yaw until the aim ends.
 #include "common.h"
 #include "re4.h"
 #include "camera.h"
+#include "config.h"
 #include <math.h>
 #include "MinHook.h"
 
@@ -22,20 +30,22 @@ static float WrapPi(float a) {
     while (a < -3.14159265f) a += 6.2831853f;
     return a;
 }
+static float Clamp(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-static volatile float g_stickRx = 0.0f;  // right stick X, -1..1 after the dead zone (written by the pad thread)
-static volatile float g_yaw = 0.0f;      // world yaw the free camera looks along
+// Written by the pad thread.
+static volatile float g_stickRx = 0.0f, g_stickRy = 0.0f;  // right stick, -1..1 after the dead zone
+static volatile float g_moveYaw = 0.0f;                     // world yaw Leon should face
+static volatile float g_moveMag = 0.0f;                     // left stick deflection 0..1
+static volatile bool g_moving = false;
+
+// Camera state (game thread).
+static volatile float g_yaw = 0.0f;  // world yaw the free camera looks along
+static float g_pitch = 0.0f;         // radians on top of the game's own camera pitch
 static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
-static volatile bool g_active = false;  // the free camera drew the last gameplay frame
-
-// Camera-relative movement (M2): the pad thread turns the left stick into a world yaw for Leon and hands the game a
-// plain "forward", so the game walks/runs him forward and never tank-turns or backpedals. The camera hook turns Leon
-// toward that yaw every frame.
-static volatile float g_moveYaw = 0.0f;
-static volatile bool g_moving = false;
 static bool g_wasMoving = false;
+static volatile bool g_active = false;  // the free camera drew the last gameplay frame
 
 // Gameplay only: the camera hook ran within the last 100 ms (menus, the inventory and the merchant freeze the world,
 // so the pad there is left alone).
@@ -45,16 +55,22 @@ static float DeadZone(float v, float dz) {
     return fabsf(v) < dz ? 0.0f : (v - copysignf(dz, v)) / (1.0f - dz);
 }
 
-static bool Aiming();
+static bool Aiming() {
+    const uint64_t keys = *(const uint64_t*)Va(kKeyBtnOn);
+    return (keys & (KEY_KAMAE | KEY_KAMAE_KNIFE)) != 0;
+}
 
 void FreeCameraPad(XGamepad& pad) {
-    g_stickRx = DeadZone(pad.sThumbRX / 32767.0f, 0.2f);
+    ConfigTick();
+    const Config& c = Cfg();
+    g_stickRx = DeadZone(pad.sThumbRX / 32767.0f, 0.2f) * (c.invertX ? -1.0f : 1.0f);
+    g_stickRy = DeadZone(pad.sThumbRY / 32767.0f, 0.2f) * (c.invertY ? -1.0f : 1.0f);
     if (!FreeCameraActive()) {
         g_moving = false;
         return;
     }
-    // The game's own right-stick look-around springs back and would fight the free yaw.
-    pad.sThumbRX = 0;
+    // The game's own right-stick look-around springs back and would fight the free camera.
+    pad.sThumbRX = pad.sThumbRY = 0;
     if (Aiming()) {
         g_moving = false;
         return;
@@ -68,6 +84,7 @@ void FreeCameraPad(XGamepad& pad) {
     }
     // Stick angle: 0 = up, + = right. Screen-right is the camera yaw minus 90 degrees.
     g_moveYaw = WrapPi(g_yaw - atan2f(lx, ly));
+    g_moveMag = mag > 1.0f ? 1.0f : mag;
     g_moving = true;
     pad.sThumbLX = 0;
     pad.sThumbLY = 32767;
@@ -78,23 +95,35 @@ static uintptr_t Player() {
     return (p >= 0x10000 && Readable((void*)p, 0x200)) ? p : 0;
 }
 
-static float DeltaFrames() {
+// Seconds since the last frame (the game counts in 30 fps frames).
+static float DeltaSec() {
     const uintptr_t g = *(uintptr_t*)Va(kGlobalPtr);
-    if (!g || !Readable((void*)(g + g::DeltaTime), 4)) return 1.0f;
-    const float dt = At<float>(g, g::DeltaTime);
-    return (dt > 0.0f && dt < 10.0f) ? dt : 1.0f;
-}
-
-static bool Aiming() {
-    const uint64_t keys = *(const uint64_t*)Va(kKeyBtnOn);
-    return (keys & (KEY_KAMAE | KEY_KAMAE_KNIFE)) != 0;
+    float dt = 1.0f;
+    if (g && Readable((void*)(g + g::DeltaTime), 4)) {
+        dt = At<float>(g, g::DeltaTime);
+        if (!(dt > 0.0f && dt < 10.0f)) dt = 1.0f;
+    }
+    return dt / 30.0f;
 }
 
 // Rotates p (x, z) around the pivot (x, z) so that its yaw grows by d.
-static void RotateAround(float* p, const float* pivot, float c, float s) {
+static void RotateYaw(float* p, const float* pivot, float c, float s) {
     const float x = p[0] - pivot[0], z = p[2] - pivot[2];
     p[0] = pivot[0] + x * c + z * s;
     p[2] = pivot[2] - x * s + z * c;
+}
+
+// Tilts p around the horizontal axis through pivot that is perpendicular to the forward direction f (x, z unit):
+// the camera's forward turns down by the angle whose cos/sin are c/s.
+static void RotatePitch(float* p, const float* pivot, float fx, float fz, float c, float s) {
+    const float x = p[0] - pivot[0], y = p[1] - pivot[1], z = p[2] - pivot[2];
+    const float a = x * fx + z * fz;           // along forward
+    const float lx = x - a * fx, lz = z - a * fz;  // sideways part, unchanged
+    const float a2 = a * c + y * s;
+    const float y2 = -a * s + y * c;
+    p[0] = pivot[0] + lx + a2 * fx;
+    p[1] = pivot[1] + y2;
+    p[2] = pivot[2] + lz + a2 * fz;
 }
 
 typedef void(__fastcall* PFN_QfpsMove)(uintptr_t self, void* edx);
@@ -105,22 +134,24 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_active = false;
     const uintptr_t pl = Player();
     if (!pl) return;
+    const Config& cfg = Cfg();
 
     float* eye = (float*)(self + cc::CameraPoint);
     float* tgt = eye + 3;
     const float gameYaw = atan2f(tgt[0] - eye[0], tgt[2] - eye[2]);
 
-    // A cutscene, door or menu in between: start again from the game's heading.
+    // A cutscene, door or menu in between: start again from the game's heading and the resting pitch.
     const DWORD now = GetTickCount();
     if (!g_haveYaw || now - g_lastFrameTick > 500) {
         g_yaw = gameYaw;
+        g_pitch = cfg.defaultPitch;
         g_haveYaw = true;
         g_wasAiming = false;
     }
     g_lastFrameTick = now;
+    const float dt = DeltaSec();
 
-    const bool aiming = Aiming();
-    if (aiming) {
+    if (Aiming()) {
         if (!g_wasAiming) {
             // Turn Leon so the aim starts where the free camera looked.
             float* ang = (float*)(pl + pl::Ang);
@@ -133,10 +164,10 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     }
     g_wasAiming = false;
 
+    float* ang = (float*)(pl + pl::Ang);
     if (g_moving) {
-        float* ang = (float*)(pl + pl::Ang);
         const float diff = WrapPi(g_moveYaw - ang[1]);
-        const float step = 0.30f * DeltaFrames();  // about 180 degrees in 0.35 s
+        const float step = cfg.turnSpeed * dt;
         ang[1] = WrapPi(ang[1] + (fabsf(diff) <= step ? diff : copysignf(step, diff)));
         if (!g_wasMoving) Log("move: start, target yaw %.3f leon %.3f cam %.3f", g_moveYaw, ang[1], g_yaw);
     } else if (g_wasMoving) {
@@ -144,28 +175,69 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     }
     g_wasMoving = g_moving;
 
-    const float turnRate = 0.10f;  // radians per 30 fps frame at full deflection (3 rad/s)
-    g_yaw = WrapPi(g_yaw - g_stickRx * turnRate * DeltaFrames());
+    g_yaw = WrapPi(g_yaw - g_stickRx * cfg.yawSpeed * dt);
+    // Stick up looks up: the camera comes down.
+    g_pitch = Clamp(g_pitch - g_stickRy * cfg.pitchSpeed * dt, -0.6f, 1.0f);
+
+    const float* pos = (const float*)(pl + pl::Pos);
+    eye[1] += cfg.height;
+    tgt[1] += cfg.height;
 
     const float d = WrapPi(g_yaw - gameYaw);
-    const float* pos = (const float*)(pl + pl::Pos);
-    const float c = cosf(d), s = sinf(d);
-    RotateAround(eye, pos, c, s);
-    RotateAround(tgt, pos, c, s);
+    const float cy = cosf(d), sy = sinf(d);
+    RotateYaw(eye, pos, cy, sy);
+    RotateYaw(tgt, pos, cy, sy);
+
+    const float pivot[3] = {pos[0], tgt[1], pos[2]};
+    RotatePitch(eye, pivot, sinf(g_yaw), cosf(g_yaw), cosf(g_pitch), sinf(g_pitch));
+    RotatePitch(tgt, pivot, sinf(g_yaw), cosf(g_yaw), cosf(g_pitch), sinf(g_pitch));
+    // Looking up must not put the camera into the floor.
+    const float minEye = pos[1] + 250.0f;
+    if (eye[1] < minEye) {
+        tgt[1] += minEye - eye[1];
+        eye[1] = minEye;
+    }
     g_active = true;
 }
 
-bool InitCameraHooks() {
-    void* target = (void*)Va(kFnQfpsMove);
-    if (!SafeEqual(target, kSigQfpsMove, sizeof(kSigQfpsMove))) {
-        Log("hook CameraQuasiFPS::move: unexpected code at %p, free camera off", target);
+// KeyConvert: the game's per-frame pad -> KEY_BTN conversion (writes Key_btn_on). Afterwards the run bit follows
+// Config::run while the stick moves Leon.
+typedef void(__cdecl* PFN_KeyConvert)();
+static PFN_KeyConvert g_origKeyConvert = nullptr;
+
+static void __cdecl HookKeyConvert() {
+    g_origKeyConvert();
+    if (!g_moving || !FreeCameraActive()) return;
+    uint64_t& keys = *(uint64_t*)Va(kKeyBtnOn);
+    const Config& c = Cfg();
+    bool run;
+    switch (c.run) {
+        case RUN_ALWAYS: run = !(keys & KEY_RUN); break;  // the run button walks
+        case RUN_OUTER_RING: run = g_moveMag >= c.outerRing || (keys & KEY_RUN); break;
+        default: return;
+    }
+    keys = run ? (keys | KEY_RUN) : (keys & ~KEY_RUN);
+}
+
+static bool Hook(uint32_t rva, const uint8_t* sig, size_t n, void* detour, void** orig, const char* name) {
+    void* target = (void*)Va(rva);
+    if (!SafeEqual(target, sig, n)) {
+        Log("hook %s: unexpected code at %p, left alone", name, target);
         return false;
     }
-    if (MH_CreateHook(target, (void*)HookQfpsMove, (void**)&g_origQfpsMove) != MH_OK ||
-        MH_EnableHook(target) != MH_OK) {
-        Log("hook CameraQuasiFPS::move: MinHook failed");
+    if (MH_CreateHook(target, detour, orig) != MH_OK || MH_EnableHook(target) != MH_OK) {
+        Log("hook %s: MinHook failed", name);
         return false;
     }
-    Log("hook CameraQuasiFPS::move at %p", target);
+    Log("hook %s at %p", name, target);
     return true;
+}
+
+bool InitCameraHooks() {
+    LoadConfig();
+    const bool cam = Hook(kFnQfpsMove, kSigQfpsMove, sizeof(kSigQfpsMove), (void*)HookQfpsMove,
+                          (void**)&g_origQfpsMove, "CameraQuasiFPS::move");
+    Hook(kFnKeyConvert, kSigKeyConvert, sizeof(kSigKeyConvert), (void*)HookKeyConvert, (void**)&g_origKeyConvert,
+         "KeyConvert");
+    return cam;
 }

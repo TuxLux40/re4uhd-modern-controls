@@ -37,7 +37,21 @@ Output: `build/xinput1_3.dll`.
 1. Copy `xinput1_3.dll` into `steamapps/common/Resident Evil 4/Bin32/`.
 2. Steam launch options: `WINEDLLOVERRIDES="xinput1_3=n,b" %command%`
    (with re4_tweaks: `WINEDLLOVERRIDES="dinput8,xinput1_3=n,b" %command%`).
-3. The mod writes `RE4ModernControls.log` next to the DLL.
+3. The mod writes `RE4ModernControls.log` and, on first start, `RE4ModernControls.ini` next to the DLL.
+
+## Options (`RE4ModernControls.ini`)
+
+Saved changes apply while the game runs.
+
+| Section | Key | Default | Meaning |
+|---|---|---|---|
+| Movement | `Run` | `Always` | `Always`: Leon runs whenever the stick moves him, hold the game's run button to walk. `OuterRing`: run past `OuterRing` deflection. `Button`: vanilla run button. |
+| Movement | `OuterRing` | `0.85` | Stick deflection where `OuterRing` starts running |
+| Movement | `TurnSpeed` | `515` | Degrees per second Leon turns toward the stick |
+| Camera | `DefaultPitch` | `12` | Resting camera angle in degrees above the game's (it starts here after every cutscene or door) |
+| Camera | `Height` | `250` | Raises the camera (game units) |
+| Camera | `YawSpeed` / `PitchSpeed` | `170` / `100` | Degrees per second at full right-stick deflection |
+| Camera | `InvertX` / `InvertY` | `0` | Invert the right stick axes |
 
 On Windows, step 1 is enough.
 
