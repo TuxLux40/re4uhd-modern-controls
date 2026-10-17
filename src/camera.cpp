@@ -387,8 +387,14 @@ static PFN_AimInit g_origAimInit = nullptr;
 static void __cdecl HookAimInit(uintptr_t pl) {
     g_origAimInit(pl);
     const uintptr_t opts = *(uintptr_t*)Va(kOptionsPtr);
-    if (opts && (At<uint32_t>(opts, 0) & 0x20000000)) return;  // aims at the locked-on enemy
-    if (!FreeCameraActive() || !Readable((void*)(pl + 0x7D8), 4)) return;
+    const uint32_t bits = opts ? At<uint32_t>(opts, 0) : 0;
+    // By now the camera hook may already have switched to the aim view this frame, so check for a recent free camera
+    // frame (Fresh) rather than the current view.
+    if ((bits & 0x20000000) || !g_haveYaw || !Fresh() || !Readable((void*)(pl + 0x7D8), 4)) {
+        Log("aim: start left to the game (options %08X, have camera %d, fresh %d)", bits, g_haveYaw ? 1 : 0,
+            Fresh() ? 1 : 0);
+        return;
+    }
     const float a = Clamp(-(g_pitch - Cfg().defaultPitch), -1.4f, 0.75f);
     const float v = Clamp((a > 0.0f ? a + a : a) * 0.63661977f, -1.0f, 1.0f);
     *(float*)Va(kAimV) = v;

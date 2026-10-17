@@ -24,6 +24,7 @@ No more tank controls: move where you push the stick, look around freely, walk w
 | 🕹️ **Camera-relative movement** | Push the left stick toward any direction on screen and Leon goes there. He runs by default; hold the run button to walk. |
 | 🎥 **Free camera** | The right stick turns the camera freely around Leon. Leave the stick alone while moving and it eases back behind him. It looks a little further down than the original and stops at walls. |
 | 🎯 **Aim where you look** | When you aim, Leon turns to face where the camera points, and tilts his aim up or down with it. Aim with the right stick. |
+| 🕹️ **Tank controls still on the d-pad** | Modern controls on the stick, the original tank controls on the d-pad. Use whichever fits the moment. |
 | 🚶 **Walk while aiming** | Move with the left stick while aiming. RE4 has no strafe animations, so Leon glides. |
 | ➕ **Remake-style crosshair** | A small reticle sits exactly on the laser's end point, so you always see your aim. |
 | 🛡️ **Ashley is safe from your shots** | With the camera free, it's easy to catch her in the crossfire. Your guns and knife no longer hurt her, the way her armour costume protects her; enemies and explosions still do. Can be switched off. |
@@ -67,8 +68,14 @@ To uninstall, delete `Bin32/xinput1_3.dll` and the `RE4ModernControls.ini` / `.l
 | **Right stick** | Turn the camera | Aim |
 | **Run button** | Hold to walk instead of run | |
 | **Aim** | Leon turns to where the camera looks | |
+| **D-pad** | Classic tank controls, untouched | |
 
 Everything else (shoot, reload, knife, actions, quick turn) stays on the game's own buttons.
+
+> [!TIP]
+> **Best of both worlds:** the mod only changes the left stick. The d-pad still drives Leon with the original tank
+> controls, so you can run around with modern controls and switch to the d-pad whenever you want the precise, classic
+> handling, for example to line up with a ladder or a tight doorway.
 
 ## Settings
 
