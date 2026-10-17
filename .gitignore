@@ -1,0 +1,6 @@
+build/
+# never commit game files or decompiler output (copyrighted)
+*.exe
+*.gpr
+*.rep/
+*_decomp.c
