@@ -48,6 +48,7 @@ static float g_pitch = 0.0f;         // radians on top of the game's own camera 
 static float g_appliedDefaultPitch = 0.0f;  // Config::defaultPitch that g_pitch currently includes
 static float g_stickIdle = 0.0f;             // seconds since the right stick last turned the camera
 static bool g_stickLatched = false;          // after an aim: ignore the right stick until it returns to centre
+static float g_modBlend = 1.0f;              // how much of the free camera's tilt and height applies (0..1)
 static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
@@ -254,6 +255,15 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             Log("cam: aim start, leon yaw -> %.3f", ang[1]);
         }
         g_wasAiming = true;
+        // Fade the free camera's tilt out over 0.25 s instead of dropping it in one frame.
+        g_modBlend = g_modBlend > dt / 0.25f ? g_modBlend - dt / 0.25f : 0.0f;
+        if (g_modBlend > 0.0f) {
+            const float pitch = g_pitch * g_modBlend;
+            const float* lpos = (const float*)(pl + pl::Pos);
+            const float pivot[3] = {lpos[0], tgt[1], lpos[2]};
+            RotatePitch(eye, pivot, sinf(gameYaw), cosf(gameYaw), cosf(pitch), sinf(pitch));
+            RotatePitch(tgt, pivot, sinf(gameYaw), cosf(gameYaw), cosf(pitch), sinf(pitch));
+        }
         g_stickLatched = true;  // the stick still holds the aim when the aim ends; don't let it swing the camera
         g_yaw = gameYaw;
         g_view = VIEW_AIM;
@@ -306,15 +316,17 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     const float pivotHeight = Clamp(gameEye[1] - pos[1], 400.0f, 1800.0f);
     // Builds the rig from the game's camera. `raise` scales the extra height and the default tilt: 1 outdoors, less
     // when walls pull the camera in (corridors), so tight spaces get a camera closer to the original.
+    // After an aim (or a reset) the tilt and height come back over 0.3 s instead of in one frame.
+    g_modBlend = g_modBlend + dt / 0.3f < 1.0f ? g_modBlend + dt / 0.3f : 1.0f;
     auto build = [&](float raise) {
         for (int i = 0; i < 3; ++i) eye[i] = gameEye[i], tgt[i] = gameTgt[i];
-        eye[1] += cfg.height * raise;
-        tgt[1] += cfg.height * raise;
+        eye[1] += cfg.height * raise * g_modBlend;
+        tgt[1] += cfg.height * raise * g_modBlend;
         const float d = WrapPi(g_yaw - gameYaw);
         const float cy = cosf(d), sy = sinf(d);
         RotateYaw(eye, pos, cy, sy);
         RotateYaw(tgt, pos, cy, sy);
-        const float pitch = g_pitch - cfg.defaultPitch * (1.0f - raise);
+        const float pitch = (g_pitch - cfg.defaultPitch * (1.0f - raise)) * g_modBlend;
         const float pivot[3] = {pos[0], tgt[1], pos[2]};
         RotatePitch(eye, pivot, sinf(g_yaw), cosf(g_yaw), cosf(pitch), sinf(pitch));
         RotatePitch(tgt, pivot, sinf(g_yaw), cosf(g_yaw), cosf(pitch), sinf(pitch));
