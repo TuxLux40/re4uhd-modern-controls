@@ -4,7 +4,9 @@
 #include <stdint.h>
 #include <string.h>
 
-#define RE4MC_VERSION_STR "0.0.1"
+#ifndef RE4MC_VERSION_STR
+#define RE4MC_VERSION_STR "dev"  // release builds pass -DRE4MC_VERSION_STR (build.sh, VERSION=...)
+#endif
 
 // XInput types (declared here so we don't depend on an SDK xinput.h version).
 struct XGamepad {

@@ -1,4 +1,5 @@
 build/
+dist/
 # never commit game files or decompiler output (copyrighted)
 *.exe
 *.gpr

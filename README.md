@@ -1,68 +1,84 @@
 # RE4 OG Modern Controls
 
-Modern, camera-relative controls for the original **Resident Evil 4** (2005, Steam "UHD" release, appid 254700),
-in the spirit of RE3Controls for Resident Evil 5 (Nexus Mods):
+Modern controls for the original **Resident Evil 4** (2005, Steam). No more tank controls:
 
-- free over-the-shoulder camera on the right stick that does not snap back behind Leon
-- camera-relative movement: push the stick toward a direction on screen and Leon goes there (no tank controls)
-- walking while aiming
-- one-button reload, quick turn, and the rest of the RE3 (2020) layout
+- **Camera-relative movement.** Push the left stick toward any direction on screen and Leon goes there. He runs by
+  default; hold the game's run button to walk.
+- **Free camera.** The right stick turns the camera freely around Leon, and it stays where you leave it. It also sits
+  a bit higher than the vanilla camera.
+- **Aim where you look.** When you aim, Leon turns to face the camera's direction.
+- **Walk while aiming.** Move with the left stick while you aim with the right stick. RE4 has no strafe animations,
+  so Leon glides.
 
-> **Status: early work in progress.** Nothing is playable yet. See [docs/RE-NOTES.md](docs/RE-NOTES.md) for the
-> reverse-engineering log and the milestone plan.
+Made for a controller. Works on Windows and on Linux / Steam Deck (Proton).
 
-## How it works
+> **Early version.** The basics work. See [what's planned](#planned) and
+> [known issues](#known-issues).
 
-The game imports `XINPUT1_3.dll`. The mod is a proxy with that name placed next to `bio4.exe`: it forwards every
-XInput call to the system XInput and hooks the game's player and camera code with
-[MinHook](https://github.com/TsudaKageyu/minhook). `bio4.exe` is built with ASLR, so all game addresses are stored
-relative to the image base, and every hook checks the expected code bytes before it patches anything.
+## Install
 
-It is meant to run side by side with [re4_tweaks](https://github.com/nipkownix/re4_tweaks), which loads through
-`dinput8.dll`.
+1. Download the latest `RE4ModernControls-vX.Y.Z.zip` from
+   [**Releases**](https://github.com/TuxLux40/re4og-modern-controls/releases).
+2. In Steam, right-click **Resident Evil 4** → **Manage** → **Browse local files**.
+3. Extract the zip into that folder and let it merge with the existing `Bin32` folder.
+4. **Windows:** done. Start the game.
 
-## Building
+   **Linux / Steam Deck:** right-click **Resident Evil 4** → **Properties** → **Launch Options** and paste:
 
-Requires [zig](https://ziglang.org/) 0.13 or newer (brings clang, lld and the mingw headers) and bash.
+   ```
+   WINEDLLOVERRIDES="xinput1_3=n,b" %command%
+   ```
 
-```sh
-bash build.sh                                              # zig on PATH
-ZIG="uv tool run --from ziglang python -m ziglang" bash build.sh   # zig from PyPI via uv
-```
+   If you also use [re4_tweaks](https://github.com/nipkownix/re4_tweaks), paste this instead:
 
-Output: `build/xinput1_3.dll`.
+   ```
+   WINEDLLOVERRIDES="dinput8,xinput1_3=n,b" %command%
+   ```
 
-## Installing (Linux / Proton)
+**Uninstall:** delete `Bin32/xinput1_3.dll` (and the `RE4ModernControls.ini` / `.log` next to it). On Linux, also
+remove the launch option.
 
-1. Copy `xinput1_3.dll` into `steamapps/common/Resident Evil 4/Bin32/`.
-2. Steam launch options: `WINEDLLOVERRIDES="xinput1_3=n,b" %command%`
-   (with re4_tweaks: `WINEDLLOVERRIDES="dinput8,xinput1_3=n,b" %command%`).
-3. The mod writes `RE4ModernControls.log` and, on first start, `RE4ModernControls.ini` next to the DLL.
+## Controls
 
-## Options (`RE4ModernControls.ini`)
+| Input | Outside aiming | While aiming |
+|---|---|---|
+| Left stick | Move toward that direction on screen | Walk (Leon glides) |
+| Right stick | Free camera | Aim |
+| Run button | Hold to walk instead of run | |
+| Aim | Leon turns to face where the camera looks | |
 
-Saved changes apply while the game runs.
+## Settings
 
-| Section | Key | Default | Meaning |
-|---|---|---|---|
-| Movement | `Run` | `Always` | `Always`: Leon runs whenever the stick moves him, hold the game's run button to walk. `OuterRing`: run past `OuterRing` deflection. `Button`: vanilla run button. |
-| Movement | `OuterRing` | `0.85` | Stick deflection where `OuterRing` starts running |
-| Movement | `TurnSpeed` | `515` | Degrees per second Leon turns toward the stick |
-| Aim | `Walk` | `1` | While aiming, the left stick walks (Leon glides, RE4 has no strafe animations) and the right stick aims |
-| Aim | `WalkSpeed` | `900` | Aim-walk speed in game units per second (Leon walks about 1500) |
-| Camera | `DefaultPitch` | `12` | Resting camera angle in degrees above the game's (it starts here after every cutscene or door) |
-| Camera | `Height` | `250` | Raises the camera (game units) |
-| Camera | `YawSpeed` / `PitchSpeed` | `170` / `100` | Degrees per second at full right-stick deflection |
-| Camera | `InvertX` / `InvertY` | `0` | Invert the right stick axes |
+The defaults are meant to just work. An in-game settings page is planned. Until then, the mod creates
+`Bin32/RE4ModernControls.ini` on the first start for anyone who wants to fine-tune it (camera height and angle,
+turn speeds, run behaviour, switching walk-while-aiming off). Changes apply while the game runs.
 
-On Windows, step 1 is enough.
+## Planned
+
+- In-game settings page: run by default on/off, free or classic camera, modern or tank controls
+- Smoother camera turn when you start aiming
+- Reload on the move and quick turn in the RE3 (2020) style
+
+## Known issues
+
+- When you start aiming with the camera turned far away from Leon, the aim camera swings around quickly.
+- Walking while aiming moves Leon directly. Walls and stairs are not tested yet, so he may slide through a wall.
+
+Found a bug? [Open an issue](https://github.com/TuxLux40/re4og-modern-controls/issues), and attach
+`Bin32/RE4ModernControls.log` if you can.
 
 ## Credits
 
-- RE3Controls (Nexus Mods, Resident Evil 5 Gold Edition) by palecvzhope (MIT): design, XInput proxy and
-  build setup this project started from.
-- [re4_tweaks](https://github.com/nipkownix/re4_tweaks) by nipkow and contributors: the reverse-engineered RE4
-  structures and code patterns this mod builds on.
-- [MinHook](https://github.com/TsudaKageyu/minhook) by Tsuda Kageyu (BSD 2-clause), in `third_party/minhook`.
+- **RE3Controls** for Resident Evil 5 by palecvzhope (MIT): the idea, the design and the XInput proxy this mod started
+  from.
+- [**re4_tweaks**](https://github.com/nipkownix/re4_tweaks) by nipkow and contributors: the reverse-engineered RE4
+  structures and code locations this mod builds on.
+- [**Ghidra**](https://github.com/NationalSecurityAgency/ghidra) (NSA): disassembly and decompilation of the game.
+- [**REA – Reverse Engineer Anything**](https://github.com/morluto/rea) by morluto: reverse-engineering tooling for
+  AI agents, used to analyse the game binary.
+- [**MinHook**](https://github.com/TsudaKageyu/minhook) by Tsuda Kageyu (BSD 2-clause): function hooking.
 
 Resident Evil is a trademark of Capcom. This project contains no game code or assets.
+
+Developers: see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building and
+[docs/RE-NOTES.md](docs/RE-NOTES.md) for the reverse-engineering notes.

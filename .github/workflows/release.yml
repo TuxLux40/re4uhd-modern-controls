@@ -1,0 +1,49 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install zig 0.17.0 (PyPI build)
+        run: python -m pip install ziglang==0.17.0
+
+      - name: Build and package
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_SHA::7}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          ZIG="python -m ziglang" VERSION="$VERSION" bash build.sh package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RE4ModernControls-v${{ env.VERSION }}
+          path: dist/*.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+            --title "RE4 Modern Controls $GITHUB_REF_NAME" \
+            --notes-file docs/INSTALL.txt \
+            $([[ "$VERSION" == 0.* ]] && echo --prerelease)
