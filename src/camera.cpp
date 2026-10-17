@@ -53,6 +53,7 @@ static float g_room = -1.0f;                 // smoothed share of the camera dis
 static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
+static int g_aimLogFrames = -1;              // frames until the aim-start check line is logged
 static bool g_wasMoving = false;
 enum View { VIEW_NONE, VIEW_FREE, VIEW_AIM };
 static volatile int g_view = VIEW_NONE;  // what the camera hook did on the last gameplay frame
@@ -289,6 +290,13 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             WalkWithCollision(pos, sinf(yaw) * stepLen, cosf(yaw) * stepLen);
         }
         if (cfg.aimWalk) KeepAshleyOnGround();
+        if (g_aimLogFrames > 0 && --g_aimLogFrames == 0) {
+            const float* ls = (const float*)Va(kLaserStart);
+            const float* le = (const float*)Va(kLaserEnd);
+            const float dx = le[0] - ls[0], dy = le[1] - ls[1], dz = le[2] - ls[2];
+            Log("aim: vertical %.2f, laser pitch %.2f rad", *(const float*)Va(kAimV),
+                atan2f(dy, sqrtf(dx * dx + dz * dz)));
+        }
         return;
     }
     g_wasAiming = false;
@@ -371,6 +379,51 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_view = VIEW_FREE;
 }
 
+// Aim start: begin at the free camera's tilt (relative to its resting tilt, so an untouched camera aims level), the way
+// the console game did from its own look-around. Positive = up (logged once per aim below to confirm the sign).
+typedef void(__cdecl* PFN_AimInit)(uintptr_t pl);
+static PFN_AimInit g_origAimInit = nullptr;
+
+static void __cdecl HookAimInit(uintptr_t pl) {
+    g_origAimInit(pl);
+    const uintptr_t opts = *(uintptr_t*)Va(kOptionsPtr);
+    if (opts && (At<uint32_t>(opts, 0) & 0x20000000)) return;  // aims at the locked-on enemy
+    if (!FreeCameraActive() || !Readable((void*)(pl + 0x7D8), 4)) return;
+    const float a = Clamp(-(g_pitch - Cfg().defaultPitch), -1.4f, 0.75f);
+    const float v = Clamp((a > 0.0f ? a + a : a) * 0.63661977f, -1.0f, 1.0f);
+    *(float*)Va(kAimV) = v;
+    *(float*)Va(kAimVStart) = v;
+    const uintptr_t w = At<uintptr_t>(pl, 0x7D8);
+    if (w && Readable((void*)(w + 0x28), 4)) *(float*)(w + 0x28) = v / 0.63661977f;
+    g_aimLogFrames = 20;
+    Log("aim: start tilt %.2f rad -> vertical aim %.2f", a, v);
+}
+
+// Ashley: drop a hit from Leon's guns or knife before the game applies it. The attack types are exactly the ones her
+// armour costume shrugs off (the game's own list, in the partner hit routine).
+typedef void(__fastcall* PFN_PartnerHit)(uintptr_t self, void* edx);
+static PFN_PartnerHit g_origPartnerHit = nullptr;
+
+static bool PlayerWeaponHit(uint8_t t) {
+    switch (t) {
+        case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x06: case 0x07: case 0x08:
+        case 0x09: case 0x0A: case 0x0B: case 0x0E: case 0x10: case 0x11: case 0x14: case 0x15: case 0x16:
+        case 0x17: case 0x18: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x1F:
+        case 0x20: case 0x21: case 0x2D: case 0x2E: case 0x2F:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void __fastcall HookPartnerHit(uintptr_t self, void* edx) {
+    if (Cfg().protectAshley && At<uint8_t>(self, 0x32C) != 0 && PlayerWeaponHit(At<uint8_t>(self, 0x32E))) {
+        Log("ashley: ignored a hit of type %02X", At<uint8_t>(self, 0x32E));
+        *(uint8_t*)(self + 0x32C) = 0;
+    }
+    g_origPartnerHit(self, edx);
+}
+
 // KeyConvert: the game's per-frame pad -> KEY_BTN conversion (writes Key_btn_on). Afterwards the run bit follows
 // Config::run while the stick moves Leon.
 typedef void(__cdecl* PFN_KeyConvert)();
@@ -416,5 +469,8 @@ bool InitCameraHooks() {
                           (void**)&g_origQfpsMove, "CameraQuasiFPS::move");
     Hook(kFnKeyConvert, kSigKeyConvert, sizeof(kSigKeyConvert), (void*)HookKeyConvert, (void**)&g_origKeyConvert,
          "KeyConvert");
+    Hook(kFnPartnerHit, kSigPartnerHit, sizeof(kSigPartnerHit), (void*)HookPartnerHit, (void**)&g_origPartnerHit,
+         "partner hit");
+    Hook(kFnAimInit, kSigAimInit, sizeof(kSigAimInit), (void*)HookAimInit, (void**)&g_origAimInit, "aim start");
     return cam;
 }

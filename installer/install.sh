@@ -119,8 +119,8 @@ say "Installed the mod."
 # ------------------------------------------------------------------------------------------- settings
 ini="$bin/RE4ModernControls.ini"
 current() { [ -f "$ini" ] || return 0; sed -n "s/^$1=\\(.*\\)\$/\\1/p" "$ini" | tr -d '\r' | head -1; }
-run=$(current Run); walk=$(current Walk); cross=$(current Crosshair); height=$(current Height); invy=$(current InvertY)
-run=${run:-Always}; walk=${walk:-1}; cross=${cross:-1}; height=${height:-0}; invy=${invy:-0}
+run=$(current Run); walk=$(current Walk); cross=$(current Crosshair); ashley=$(current ProtectAshley); height=$(current Height); invy=$(current InvertY)
+run=${run:-Always}; walk=${walk:-1}; cross=${cross:-1}; ashley=${ashley:-1}; height=${height:-0}; invy=${invy:-0}
 
 ask_choice() {  # ask_choice "question" default option...
   local q="$1" def="$2" i=1 a; shift 2
@@ -147,6 +147,7 @@ if [ $defaults = 0 ]; then
   say ""
   walk=$(ask_yn "Walk with the left stick while aiming?" "$walk")
   cross=$(ask_yn "Show a crosshair where the laser points?" "$cross")
+  ashley=$(ask_yn "Protect Ashley from your own guns and knife?" "$ashley")
   [ "$height" = 0 ] && d=1 || d=2
   case "$(ask_choice "Camera height" $d "Same height as the original game (recommended)" "A bit higher")" in
     2) height=250 ;; *) height=0 ;;
@@ -162,6 +163,7 @@ set_key() { sed -i "s/^;\\?$1=.*\$/$1=$2/" "$tmp"; }
 [ "$run" != Always ] && set_key Run "$run"
 [ "$walk" != 1 ] && set_key Walk "$walk"
 [ "$cross" != 1 ] && set_key Crosshair "$cross"
+[ "$ashley" != 1 ] && set_key ProtectAshley "$ashley"
 [ "$height" != 0 ] && set_key Height "$height"
 [ "$invy" != 0 ] && set_key InvertY "$invy"
 sed 's/$/\r/' "$tmp" > "$ini" && rm -f "$tmp"
