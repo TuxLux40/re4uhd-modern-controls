@@ -7,6 +7,7 @@ namespace re4 {
 
 // Globals
 constexpr uint32_t kPlayerPtr = 0x00857054;  // cPlayer** (pPL)
+constexpr uint32_t kAshleyPtr = 0x00857060;  // cPlayer** (pAS), same layout as Leon (pos at pl::Pos)
 constexpr uint32_t kGlobalPtr = 0x00806F3C;  // GLOBAL_WK** (pG)
 constexpr uint32_t kCamCtrl = 0x008702D0;    // CameraControl (the object itself, not a pointer)
 constexpr uint32_t kKeyBtnOn = 0x00862F08;   // u64 KEY_BTN bits held this frame (after the game's mapping)

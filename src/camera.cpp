@@ -108,10 +108,11 @@ void FreeCameraPad(XGamepad& pad) {
     pad.sThumbLY = 32767;
 }
 
-static uintptr_t Player() {
-    const uintptr_t p = *(uintptr_t*)Va(kPlayerPtr);
-    return (p >= 0x10000 && Readable((void*)p, 0x200)) ? p : 0;
+static uintptr_t Character(uint32_t ptrRva) {
+    const uintptr_t p = *(uintptr_t*)Va(ptrRva);
+    return (p >= 0x10000 && Readable((void*)p, 0x200) && At<uint32_t>(p, 0) >= 0x10000) ? p : 0;
 }
+static uintptr_t Player() { return Character(kPlayerPtr); }
 
 // The game's line-vs-world trace (re4.h kFnTrace) on the world collision set. Returns true and the hit point.
 typedef int(__fastcall* PFN_Trace)(uintptr_t self, void* edx, const float* from, const float* to, float* hit,
@@ -146,16 +147,39 @@ static void WalkWithCollision(float* pos, float dx, float dz) {
 }
 
 // Keeps the camera in front of walls: traces from Leon's head to the eye and pulls the eye in to the first hit.
-static void CameraCollision(const float* pos, float* eye) {
+// Returns how much of the head-to-eye distance is left (1 = nothing in the way).
+static float CameraCollision(const float* pos, float* eye) {
     const float head[3] = {pos[0], pos[1] + 1500.0f, pos[2]};
     float hit[3];
-    if (!Trace(head, eye, hit, kTraceCamA, kTraceCamB)) return;
+    if (!Trace(head, eye, hit, kTraceCamA, kTraceCamB)) return 1.0f;
+    const float ex = eye[0] - head[0], ey = eye[1] - head[1], ez = eye[2] - head[2];
+    const float full = sqrtf(ex * ex + ey * ey + ez * ez);
     const float dx = head[0] - hit[0], dy = head[1] - hit[1], dz = head[2] - hit[2];
     const float len = sqrtf(dx * dx + dy * dy + dz * dz);
     const float back = len > 150.0f ? 150.0f / len : 1.0f;  // stay 150 units off the wall
     eye[0] = hit[0] + dx * back;
     eye[1] = hit[1] + dy * back;
     eye[2] = hit[2] + dz * back;
+    return full > 1.0f ? (len - 150.0f > 0.0f ? (len - 150.0f) / full : 0.0f) : 1.0f;
+}
+
+// Ashley ducks behind Leon while he aims; vanilla never moved Leon then, so the game doesn't keep her on the floor.
+// While aim-walking, her height follows the ground under her.
+static void KeepAshleyOnGround() {
+    const uintptr_t as = Character(kAshleyPtr);
+    const uintptr_t pl = Player();
+    if (!as || !pl) return;
+    float* apos = (float*)(as + pl::Pos);
+    const float* lpos = (const float*)(pl + pl::Pos);
+    const float dx = apos[0] - lpos[0], dz = apos[2] - lpos[2];
+    if (dx * dx + dz * dz > 3000.0f * 3000.0f) return;  // not the one behind Leon
+    // Leon stands on the ground (the game keeps him there) and she is right behind him, so her floor is within a
+    // flight of stairs of his height: trace down from a bit above it, never from her own (possibly sunk) height and
+    // not so high that a balcony above her catches the trace.
+    const float from[3] = {apos[0], lpos[1] + 700.0f, apos[2]};
+    const float to[3] = {apos[0], lpos[1] - 1500.0f, apos[2]};
+    float hit[3];
+    if (Trace(from, to, hit, kTracePlA, kTracePlB) || Trace(from, to, hit, 0, 0)) apos[1] = hit[1];
 }
 
 // Seconds since the last frame (the game counts in 30 fps frames).
@@ -234,6 +258,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             const float stepLen = cfg.aimWalkSpeed * mag * dt;
             WalkWithCollision(pos, sinf(yaw) * stepLen, cosf(yaw) * stepLen);
         }
+        if (cfg.aimWalk) KeepAshleyOnGround();
         return;
     }
     g_wasAiming = false;
@@ -254,24 +279,31 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_pitch = Clamp(g_pitch - g_stickRy * cfg.pitchSpeed * dt, -0.6f, 1.0f);
 
     const float* pos = (const float*)(pl + pl::Pos);
-    eye[1] += cfg.height;
-    tgt[1] += cfg.height;
-
-    const float d = WrapPi(g_yaw - gameYaw);
-    const float cy = cosf(d), sy = sinf(d);
-    RotateYaw(eye, pos, cy, sy);
-    RotateYaw(tgt, pos, cy, sy);
-
-    const float pivot[3] = {pos[0], tgt[1], pos[2]};
-    RotatePitch(eye, pivot, sinf(g_yaw), cosf(g_yaw), cosf(g_pitch), sinf(g_pitch));
-    RotatePitch(tgt, pivot, sinf(g_yaw), cosf(g_yaw), cosf(g_pitch), sinf(g_pitch));
-    // Looking up must not put the camera into the floor.
-    const float minEye = pos[1] + 250.0f;
-    if (eye[1] < minEye) {
-        tgt[1] += minEye - eye[1];
-        eye[1] = minEye;
-    }
-    CameraCollision(pos, eye);
+    const float gameEye[3] = {eye[0], eye[1], eye[2]}, gameTgt[3] = {tgt[0], tgt[1], tgt[2]};
+    // Builds the rig from the game's camera. `raise` scales the extra height and the default tilt: 1 outdoors, less
+    // when walls pull the camera in (corridors), so tight spaces get a camera closer to the original.
+    auto build = [&](float raise) {
+        for (int i = 0; i < 3; ++i) eye[i] = gameEye[i], tgt[i] = gameTgt[i];
+        eye[1] += cfg.height * raise;
+        tgt[1] += cfg.height * raise;
+        const float d = WrapPi(g_yaw - gameYaw);
+        const float cy = cosf(d), sy = sinf(d);
+        RotateYaw(eye, pos, cy, sy);
+        RotateYaw(tgt, pos, cy, sy);
+        const float pitch = g_pitch - cfg.defaultPitch * (1.0f - raise);
+        const float pivot[3] = {pos[0], tgt[1], pos[2]};
+        RotatePitch(eye, pivot, sinf(g_yaw), cosf(g_yaw), cosf(pitch), sinf(pitch));
+        RotatePitch(tgt, pivot, sinf(g_yaw), cosf(g_yaw), cosf(pitch), sinf(pitch));
+        // Looking up must not put the camera into the floor.
+        const float minEye = pos[1] + 250.0f;
+        if (eye[1] < minEye) {
+            tgt[1] += minEye - eye[1];
+            eye[1] = minEye;
+        }
+        return CameraCollision(pos, eye);
+    };
+    const float room = build(1.0f);
+    if (room < 0.9f) build(room);
     g_view = VIEW_FREE;
 }
 

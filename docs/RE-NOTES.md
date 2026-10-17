@@ -38,6 +38,7 @@ All re4_tweaks patterns above match exactly once. Resolved (VA at base 0x400000)
 | `CameraQuasiFPS::move` | 0x0059E130 | thiscall, ECX = CamCtrl+0x278; mode 10 copies its CamPoint (+0xA4) into `m_camera_38` |
 | `pl_R1_Walk` / `Run` / `Turn180` | 0x00763331 / 0x00763771 / 0x00763DC5 | pattern hits (inside the functions) |
 
+| `pAS` | 0x00C57060 | Ashley `cPlayer**` (pattern `A8 02 74 16 8B 15` +6). While Leon aims she ducks behind him at a position the game derives from his; her height is not ground-snapped then (vanilla never moved Leon while aiming), so the mod traces her floor each aiming frame. |
 | `Joy[0]` | 0x00C63008 | Filled in KeyConvert from the pad device object `0x00964670(0)` (floats: +0xC/+0x10 left stick, +0x14/+0x18 right stick), x127, clamp, dead zone 31 -> +-63. While a bound action (aim) is held the branch at 0x009679BD swaps the sticks: Joy left <- right stick. `PlWepLockCtrl` (0x00688090) aims from Joy left + on bits (0x00C6301C). `0x012224B0 == 1` takes a separate (mouse) aim path. |
 
 | Trace | 0x00594160 | thiscall `Trace(from, to, hit, 0, maskA, maskB)`, ret 0x18, nonzero on hit. Collision sets: 0x00BF9A7C (world: Leon's movement masks 0/0x800, game camera 0x8000/0 at 0x006F69A9), 0x00BF9AA0 (laser: 0/0x400000). `FUN_005BC050` = laser trace: world first, then models (returns 2/3 on a model). |

@@ -146,7 +146,7 @@ either way, so this table can grow.
 ## Known issues
 
 - When you start aiming with the camera turned far away from Leon, the aim camera swings around quickly.
-- Walking while aiming checks walls at knee height; stairs and slopes are not tested yet.
+- Walking while aiming follows slopes and stops at walls; Ashley is kept on the ground behind you.
 
 Found a bug? [Open an issue](https://github.com/TuxLux40/re4og-modern-controls/issues), and attach
 `Bin32/RE4ModernControls.log` if you can.
