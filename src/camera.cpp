@@ -54,7 +54,8 @@ static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
 static int g_aimLogFrames = -1;              // frames until the aim-start check line is logged
-static int g_aimSeedFrames = 0;              // aim frames left in which the vertical aim is set from the camera
+static float g_aimSeedTime = 0.0f;           // seconds left in which the vertical aim is held at the camera's tilt
+static int g_aimTraceFrames = 0;             // aim frames left to log the vertical aim (diagnostics)
 static float g_aimSeed = 0.0f;
 static bool g_wasMoving = false;
 enum View { VIEW_NONE, VIEW_FREE, VIEW_AIM };
@@ -270,16 +271,29 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             // Vertical aim: -1..1, + = up (angle doubled when up, times 2/pi; the console game's look-to-aim math).
             const float a = Clamp(-(g_pitch - cfg.defaultPitch), -1.4f, 0.75f);
             g_aimSeed = Clamp((a > 0.0f ? a + a : a) * 0.63661977f, -1.0f, 1.0f);
-            g_aimSeedFrames = 4;
+            g_aimSeedTime = 0.5f;
+            g_aimTraceFrames = 40;
             g_aimLogFrames = 20;
             Log("cam: aim start, leon yaw -> %.3f, tilt %.2f -> vertical aim %.2f (was %.2f / %.2f, blend %.2f)", ang[1],
                 a, g_aimSeed, *(const float*)Va(kAimV), *(const float*)Va(kAimVStart), *(const float*)Va(kAimVBlend));
         }
         // The game settles its aim during the first frames; hold the seed until then (the stick adds on top later).
-        if (g_aimSeedFrames > 0) {
-            --g_aimSeedFrames;
-            *(float*)Va(kAimV) = g_aimSeed;
-            *(float*)Va(kAimVStart) = g_aimSeed;
+        // While the gun comes up the game pulls the aim back toward level; hold it until the raise is over or the aim
+        // stick moves (Joy[0]'s left stick carries the aim stick while aiming).
+        if (g_aimSeedTime > 0.0f) {
+            const int jx = *(const int*)(Va(kJoy0) + joy::LX), jy = *(const int*)(Va(kJoy0) + joy::LY);
+            if (jx != 0 || jy != 0) {
+                g_aimSeedTime = 0.0f;
+            } else {
+                g_aimSeedTime -= dt;
+                *(float*)Va(kAimV) = g_aimSeed;
+                *(float*)Va(kAimVStart) = g_aimSeed;
+            }
+        }
+        if (g_aimTraceFrames > 0) {
+            --g_aimTraceFrames;
+            Log("aim: trace v %.3f p %.3f hold %.2f joy %d,%d", *(const float*)Va(kAimV), *(const float*)Va(kAimVStart),
+                g_aimSeedTime, *(const int*)(Va(kJoy0) + joy::LX), *(const int*)(Va(kJoy0) + joy::LY));
         }
         g_wasAiming = true;
         // Fade the free camera's tilt out over 0.25 s instead of dropping it in one frame.
