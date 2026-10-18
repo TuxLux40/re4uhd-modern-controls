@@ -56,6 +56,7 @@ void LoadConfig() {
     c.centeredAim = ReadFloat(path, "Aim", "CenteredAim", 1.0f) != 0.0f;
     c.centerDot = ReadFloat(path, "Aim", "CenterDot", 1.0f) != 0.0f;
     c.hideActionPrompt = ReadFloat(path, "Buttons", "HideActionPrompt", 1.0f) != 0.0f;
+    c.autoQte = ReadFloat(path, "Buttons", "AutoQTE", 1.0f) != 0.0f;
     c.keepViewOnAim = ReadFloat(path, "Aim", "KeepViewOnAim", 1.0f) != 0.0f;
     c.aimShoulderRight = ReadFloat(path, "Aim", "ShoulderRight", 400.0f);
     c.aimShoulderBack = ReadFloat(path, "Aim", "ShoulderBack", 750.0f);

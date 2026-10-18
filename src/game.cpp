@@ -152,9 +152,11 @@ bool HookAt(uint32_t rva, const uint8_t* sig, size_t n, void* detour, void** ori
 
 void InitButtonHooks();
 void InitPromptHooks();
+void InitQteHooks();
 void InitGameHooks() {
     InitButtonHooks();
     InitPromptHooks();
+    InitQteHooks();
     InitCameraHooks();
     HookAt(kFnCamCtrlMove, kSigCamCtrlMove, sizeof(kSigCamCtrlMove), (void*)HookCamMove, (void**)&g_origCamMove,
            "CameraControl::move");

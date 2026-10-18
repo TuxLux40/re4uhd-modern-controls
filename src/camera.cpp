@@ -300,24 +300,6 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             // Once the aim has settled, show this camera as is: the game's smoothing would let the view trail Leon's
             // turn by about 0.15 s.
             if (g_aimLocked) At<uint32_t>(Va(kCamSmooth), kCamSmoothCut) |= 1;
-            // Measurement: while turning, how far the gun's line trails the camera, and the aim values behind it.
-            static int s_diag = 0;
-            static DWORD s_diagTick = 0;
-            float gs[3], gh[3];
-            if (s_diag < 80 && (g_stickRx != 0.0f || g_stickRy != 0.0f) && now - s_diagTick >= 100 && GunLine(gs, gh)) {
-                s_diagTick = now;
-                ++s_diag;
-                const float camYaw = atan2f(tgt[0] - eye[0], tgt[2] - eye[2]);
-                const float gunYaw = atan2f(gh[0] - gs[0], gh[2] - gs[2]);
-                const float ch = sqrtf((tgt[0] - eye[0]) * (tgt[0] - eye[0]) + (tgt[2] - eye[2]) * (tgt[2] - eye[2]));
-                const float gl = sqrtf((gh[0] - gs[0]) * (gh[0] - gs[0]) + (gh[2] - gs[2]) * (gh[2] - gs[2]));
-                Log("diag: stick %.2f,%.2f leon %.1f cam %.1f gun %.1f (gun-cam %.1f) pitch cam %.1f gun %.1f | aimV "
-                    "target %.3f pose %.3f blend %.3f side %.3f",
-                    g_stickRx, g_stickRy, At<float>(pl, pl::Ang + 4) * 57.3f, camYaw * 57.3f, gunYaw * 57.3f,
-                    WrapPi(gunYaw - camYaw) * 57.3f, atan2f(tgt[1] - eye[1], ch) * 57.3f,
-                    atan2f(gh[1] - gs[1], gl) * 57.3f, *(float*)Va(kAimV), *(float*)Va(kAimVStart),
-                    *(float*)Va(kAimVBlend), At<float>(pl, 0x448));
-            }
         }
         const float ax = g_aimMoveX, ay = g_aimMoveY;
         // Only while Leon is actually in his aim or knife stance (r_no_0 0, r_no_1 6 / 0xB): a hit or stagger with the

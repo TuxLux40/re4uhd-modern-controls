@@ -83,8 +83,8 @@ To uninstall, delete `Bin32/xinput1_3.dll` and the `RE4ModernControls.ini` / `.l
 
 This is the RE5-style layout (`[Buttons] Layout=RE5`). Set `GameType` to the layout chosen in the game's own options so the mod presses the right buttons: 1, 2 or 3 for Type I, II or III in its Controller Setup (Type I is the default). Menus, the inventory and cutscene prompts keep the game's own
 layout. The game's action prompts ("X Open", "X Save") would show X while A acts, so they are hidden
-(`HideActionPrompt=0` brings them back); set `DisableQTE = true` in re4_tweaks' `dinput8.ini` so quick-time events
-pass on their own, since their prompts go with them. `Layout=Original` keeps the game's buttons everywhere (RT aim, X action and fire, A run and reload, LT knife,
+(`HideActionPrompt=0` brings them back), and quick-time events pass on their own since their prompts go with them
+(`AutoQTE=0` turns that off). `Layout=Original` keeps the game's buttons everywhere (RT aim, X action and fire, A run and reload, LT knife,
 Y map, Start inventory).
 
 > [!TIP]
@@ -185,7 +185,7 @@ Found a bug? [Open an issue](https://github.com/TuxLux40/re4uhd-modern-controls/
 | | |
 |---|---|
 | **RE3Controls** for Resident Evil 5, by palecvzhope (MIT) | The idea, the design and the XInput proxy this mod started from |
-| [**re4_tweaks**](https://github.com/nipkownix/re4_tweaks), by nipkow and contributors | The reverse-engineered RE4 structures and code locations this mod builds on |
+| [**re4_tweaks**](https://github.com/nipkownix/re4_tweaks), by nipkow and contributors (zlib) | The reverse-engineered RE4 structures and code locations this mod builds on; the automatic QTEs are ported from its `DisableQTE` (`src/qte.cpp`, altered) |
 | [**Ghidra**](https://github.com/NationalSecurityAgency/ghidra) (NSA) | Disassembly and decompilation of the game |
 | [**REA: Reverse Engineer Anything**](https://github.com/morluto/rea), by morluto | Reverse-engineering tooling for AI agents, used to analyse the game |
 | [**MinHook**](https://github.com/TsudaKageyu/minhook), by Tsuda Kageyu (BSD 2-clause) | Function hooking |

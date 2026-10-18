@@ -34,8 +34,6 @@ static bool CanReload() {
     if (!Readable(vt + 19, 4)) return true;
     typedef bool(__thiscall* PFN_Reloadable)(uintptr_t);
     const bool ok = ((PFN_Reloadable)vt[19])(wep);
-    static int logged = 0;
-    if (logged < 10) ++logged, Log("buttons: reload %s", ok ? "possible" : "not needed or no ammo");
     return ok;
 }
 
@@ -143,9 +141,6 @@ void RemapButtons(XGamepad& p) {
     if (loadedType != Cfg().gameType) {
         loadedType = Cfg().gameType;
         LoadBindings(loadedType);
-        // The controller type the game itself uses (SystemSave +0xB: 0 = I, 1 = II, 2 = III), logged to check it.
-        const uintptr_t ss = *(uintptr_t*)Va(0x806F40);
-        if (ss >= 0x10000 && Readable((void*)(ss + 0xB), 1)) Log("buttons: game's pad type %d", *(uint8_t*)(ss + 0xB) + 1);
     }
     static WORD prev = 0, latched = 0;
     static bool prevLt = false, prevRt = false, ltLatched = false, rtLatched = false;

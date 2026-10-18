@@ -17,6 +17,7 @@ struct Config {
     bool crosshair = true;      // crosshair at the laser's end point
     bool centerDot = true;      // a small dot in the middle of the screen outside of aiming too (with CenteredAim)
     bool hideActionPrompt = true;   // hide the door/item prompt (the action icon would show X; A acts)
+    bool autoQte = true;           // quick-time events pass on their own (their prompts are hidden with the action prompts)
     bool centeredAim = true;
     bool keepViewOnAim = true;   // raising the gun keeps the view's direction (remake style) instead of looking where Leon looks    // while aiming the camera looks where the laser points: crosshair in the centre
     float aimShoulderRight = 400.0f;   // aim camera: sideways from Leon's centre (game units, + = right)
