@@ -38,4 +38,4 @@ Bin32\RE4ModernControls.ini, which explains every option (changes apply while
 the game runs). An in-game settings page is planned.
 
 Project page, updates and bug reports:
-https://github.com/TuxLux40/re4og-modern-controls
+https://github.com/TuxLux40/re4uhd-modern-controls
