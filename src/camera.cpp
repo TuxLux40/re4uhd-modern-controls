@@ -257,6 +257,30 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
 
     float* eye = (float*)(self + cc::CameraPoint);
     float* tgt = eye + 3;
+    // A reload with X alone: Leon is in his aim routine, so the game has switched to its own aim camera (closer, fov
+    // 45). Keep the camera from before instead, following Leon as he glides.
+    static float s_eye[3], s_tgt[3], s_pos[3], s_fov = 0.0f;
+    static bool s_have = false, s_hold = false;
+    {
+        const float* lp = (const float*)(pl + pl::Pos);
+        // The reload outlasts our fake aim by a few frames (Leon is still in his aim routine, r_no_1 6): the game's aim
+        // camera must not show through then either.
+        const bool stance = At<uint8_t>(pl, pl::RNo0) == 0 && At<uint8_t>(pl, pl::RNo0 + 1) == 6;
+        s_hold = QuickReload() || (s_hold && stance && !Aiming());
+        if (!s_hold || !s_have) {
+            if (!Aiming()) {
+                for (int i = 0; i < 3; ++i) s_eye[i] = eye[i], s_tgt[i] = tgt[i], s_pos[i] = lp[i];
+                s_fov = eye[7];
+                s_have = true;
+            }
+        } else {
+            for (int i = 0; i < 3; ++i) {
+                const float d = lp[i] - s_pos[i];
+                eye[i] = s_eye[i] + d, tgt[i] = s_tgt[i] + d;
+            }
+            if (s_fov > 1.0f) eye[7] = s_fov;
+        }
+    }
     const float gameYaw = atan2f(tgt[0] - eye[0], tgt[2] - eye[2]);
 
     // A cutscene, door or menu in between: start again from the game's heading and the resting pitch.
@@ -349,6 +373,18 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_wasAiming = false;
 
     float* ang = (float*)(pl + pl::Ang);
+    // Reloading without aiming (like the remakes): Leon keeps moving with the left stick, relative to the free camera,
+    // and turns the way he goes. The game ignores the stick in its aim routine, so he glides (r_no_0 0, r_no_1 6).
+    if (s_hold && cfg.aimWalk && At<uint8_t>(pl, pl::RNo0) == 0 && At<uint8_t>(pl, pl::RNo0 + 1) == 6 &&
+        (g_aimMoveX != 0.0f || g_aimMoveY != 0.0f)) {
+        float mag = sqrtf(g_aimMoveX * g_aimMoveX + g_aimMoveY * g_aimMoveY);
+        if (mag > 1.0f) mag = 1.0f;
+        const float yaw = WrapPi(g_yaw - atan2f(g_aimMoveX, g_aimMoveY));
+        const float diff = WrapPi(yaw - ang[1]), step = cfg.turnSpeed * dt;
+        ang[1] = WrapPi(ang[1] + (fabsf(diff) <= step ? diff : copysignf(step, diff)));
+        const float stepLen = cfg.reloadSpeed * mag * dt;
+        WalkWithCollision((float*)(pl + pl::Pos), sinf(yaw) * stepLen, cosf(yaw) * stepLen);
+    }
     if (g_moving) {
         const float diff = WrapPi(g_moveYaw - ang[1]);
         const float step = cfg.turnSpeed * dt;

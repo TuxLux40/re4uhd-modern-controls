@@ -14,6 +14,7 @@ struct Config {
     // [Aim]
     bool aimWalk = true;        // left stick walks while aiming, right stick aims
     float aimWalkSpeed = 1300;  // game units per second at full deflection
+    float reloadSpeed = 3900;   // the same while reloading without aiming (about Leon's running speed)
     bool crosshair = true;      // crosshair at the laser's end point
     bool centerDot = true;      // a small dot in the middle of the screen outside of aiming too (with CenteredAim)
     bool hideActionPrompt = true;   // hide the door/item prompt (the action icon would show X; A acts)

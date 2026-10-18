@@ -58,7 +58,8 @@ searching the disassembly for `mov ecx,<object>` followed by `call`.
 | M2 | Camera-relative movement: turn Leon toward camera yaw - stick angle, feed the game "forward" | works (oliver, 2026-10-17, with run forced via Steam Input); `Run=Always` via `KEY_RUN` after KeyConvert works |
 | M3 | Walk while aiming: the game already aims with the right stick (KeyConvert swaps the sticks into `Joy[0]` while aim is held); the mod hides the left stick and moves `pos_94` along it relative to the aim camera | walking confirmed; aim fix: log shows Leon turning and walking while aiming (2026-10-17); collision unknown |
 | M3b | (walls, crosshair, Ashley confirmed by oliver 2026-10-17; camera tuned live to Height 0 / pitch 12) Camera wall collision (trace head -> eye), aim-walk wall collision (knee-height trace, slide), crosshair at the projected laser end (D3D9 Present + Clear rects), aim-walk 1300 | built, untested |
-| M4 | Reload on the move, quick turn, button layout | |
+| M4 | Reload on the move, quick turn, button layout | reload without aiming keeps the free camera (cached pre-aim camera, shifted by Leon's glide) and Leon glides at `ReloadSpeed` while reloading; confirmed by oliver 2026-10-18 |
+| M4c | Leg animation while reloading and moving: Leon glides in his aim routine (`r_no_0 0`, `r_no_1 6`), so his legs stand still. Play the normal walk/run animation on the legs only (upper body keeps the reload) | planned |
 | M4b | Version independence: find every address by byte pattern at startup (like re4_tweaks) instead of fixed RVAs, so other bio4.exe builds (1.0.6, future patches) work | planned |
 | M5 | In-game options menu entries: run default (Always / OuterRing / Button), free / default camera, modern / tank controls (the ini keeps working as the fallback) | planned |
 
