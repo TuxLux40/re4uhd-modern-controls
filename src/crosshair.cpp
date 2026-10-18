@@ -51,43 +51,27 @@ bool AimCentered() { return GetTickCount() - g_centeredTick < 100; }
 // that aspect (4:3 by default), not from the screen's. The height is cropped to the screen's shape instead: a 16:9
 // screen shows the 4:3 width of view and 3/4 of its height (measured: off by exactly that factor otherwise).
 // Returns NDC (-1..1, y up).
-// The point the reticle marks: along the laser, at a smoothed distance. The laser's own end jumps between the head and
-// the wall behind it whenever it slips off a target; that would throw the reticle along the laser's line on screen.
-// The distance eases instead: quickly onto nearer hits, slowly out to far ones.
-static float g_depth = -1.0f;
-static DWORD g_depthTick = 0;
+// The point the reticle marks: the laser's first hit. `drawn`: the laser as drawn (held inside the ticks); otherwise the
+// gun's own line, for the camera.
 bool GunLine(float* start, float* hit);
+bool DrawLine(float* start, float* hit);
 float SpreadRadius();
 bool AimOnTarget();
-static void AimPoint(float* out) {
-    // The gun's line as the laser shows it, cut at its first hit.
-    float gs[3], ge[3];
-    const float* s = (const float*)Va(kLaserStart);
-    const float* e = (const float*)Va(kLaserEnd);
-    if (GunLine(gs, ge)) s = gs, e = ge;
-    const float dx = e[0] - s[0], dy = e[1] - s[1], dz = e[2] - s[2];
-    const float len = sqrtf(dx * dx + dy * dy + dz * dz);
-    const DWORD now = GetTickCount();
-    const float dt = (now - g_depthTick) / 1000.0f;
-    g_depthTick = now;
-    if (len < 1.0f) {
+void SetTickRadius(float r);
+static void AimPoint(float* out, bool drawn) {
+    float s[3], e[3];
+    if (drawn ? DrawLine(s, e) : GunLine(s, e)) {
         out[0] = e[0], out[1] = e[1], out[2] = e[2];
         return;
     }
-    if (g_depth < 0.0f || dt > 0.2f) {
-        g_depth = len;
-    } else {
-        const float tau = len < g_depth ? 0.08f : 0.5f;
-        g_depth *= expf(logf(len / g_depth) * (1.0f - expf(-dt / tau)));  // eases in log space: 5 m and 50 m alike
-    }
-    const float k = g_depth / len;
-    out[0] = s[0] + dx * k, out[1] = s[1] + dy * k, out[2] = s[2] + dz * k;
+    const float* le = (const float*)Va(kLaserEnd);
+    out[0] = le[0], out[1] = le[1], out[2] = le[2];
 }
 
 // For the camera: the point the crosshair marks while the laser is shown.
 bool LaserAimPoint(float* out, float* yaw, float* pivotXZ) {
     if (GetTickCount() - g_laserTick > 100) return false;
-    AimPoint(out);
+    AimPoint(out, false);
     *yaw = g_laserYaw;
     pivotXZ[0] = g_laserPivot[0];
     pivotXZ[1] = g_laserPivot[1];
@@ -101,7 +85,7 @@ static bool ProjectLaserEnd(float screenAspect, float* ndcX, float* ndcY) {
     const float aspect = At<float>(Va(kProjAspect), 0);
     if (!(fovy > 1.0f && fovy < 170.0f) || !(aspect > 0.5f && aspect < 8.0f)) return false;
     float p[3];
-    AimPoint(p);
+    AimPoint(p, true);
     const float d[3] = {p[0] - m[3], p[1] - m[7], p[2] - m[11]};
     // camera space = R^T * d (columns of R are the camera axes in world space)
     const float x = m[0] * d[0] + m[4] * d[1] + m[8] * d[2];
@@ -121,38 +105,16 @@ static bool ProjectLaserEnd(float screenAspect, float* ndcX, float* ndcY) {
 
 // --------------------------------------------------------------------------------------------------- drawing
 static void DrawCrosshair(IDirect3DDevice9* dev) {
-    static bool visible = false;
-    static float sx = 0.0f, sy = 0.0f;  // smoothed NDC
-    static LARGE_INTEGER last = {}, freq = {};
-    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-    const float dt = last.QuadPart ? (float)(now.QuadPart - last.QuadPart) / (float)freq.QuadPart : 0.0f;
-    last = now;
-
     static float screenAspect = 16.0f / 9.0f;  // from the back buffer, below
     float nx = 0.0f, ny = 0.0f;
     if (!Cfg().crosshair || GetTickCount() - g_laserTick > 100 || !ProjectLaserEnd(screenAspect, &nx, &ny)) {
-        visible = false;
+        SetTickRadius(0.0f);
         return;
     }
-    // Without the centered aim RE4 sways the aim, so the laser end shakes: the whole reticle follows it smoothed
-    // (~60 ms), steady like the remakes', still on the average aim point. With it the ticks stay in the middle of the
-    // screen (the camera's aim) and the dot sits exactly on the laser, showing the breathing and the recoil.
-    static float tx = 0.0f, ty = 0.0f;  // the ticks' centre
-    if (!visible) {
-        sx = tx = nx;
-        sy = ty = ny;
-        visible = true;
-    } else if (AimCentered()) {
-        sx = nx, sy = ny;
-        tx = ty = 0.0f;
-    } else {
-        const float k = 1.0f - expf(-dt / 0.06f);
-        sx += (nx - sx) * k;
-        sy += (ny - sy) * k;
-        tx = sx, ty = sy;
-    }
+    // The dot sits exactly on the laser's end. With the centered aim the ticks stay in the middle of the screen (the
+    // camera's aim); otherwise they surround the dot.
+    float sx = nx, sy = ny, tx = nx, ty = ny;
+    if (AimCentered()) tx = ty = 0.0f;
     if (fabsf(sx) >= 1.0f || fabsf(sy) >= 1.0f) return;
 
     IDirect3DSurface9* bb = nullptr;
@@ -171,8 +133,8 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
         // Remake-style reticle (RE2/RE3/RE4 2019-2023): a small centre dot and four short ticks around it.
         const LONG cx = (LONG)((tx * 0.5f + 0.5f) * w);   // ticks
         const LONG cy = (LONG)((0.5f - ty * 0.5f) * h);
-        const LONG ex = (LONG)((sx * 0.5f + 0.5f) * w);   // dot
-        const LONG ey = (LONG)((0.5f - sy * 0.5f) * h);
+        LONG ex = (LONG)((sx * 0.5f + 0.5f) * w);         // dot
+        LONG ey = (LONG)((0.5f - sy * 0.5f) * h);
         const LONG th = h >= 1400 ? 3 : 2;              // line thickness and dot size
         const LONG len = (LONG)(h * 0.008f) + 1;        // tick length
         LONG gap = (LONG)(h * 0.011f) + 2;              // centre to the inner end of a tick
@@ -187,10 +149,24 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
                 gap += (LONG)(px < h * 0.1f ? px : h * 0.1f);
             }
         }
+        const LONG big = (LONG)(h * 0.006f) > th + 3 ? (LONG)(h * 0.006f) : th + 3;  // red dot, ~6 px at 1080p
+        // Centered aim: the dot never leaves the space between the ticks. While the gun points further out (recoil, the
+        // aim settling) the dot waits at the edge; shot.cpp turns the laser and the bullets to that point.
+        if (AimCentered()) {
+            const uintptr_t cam = Va(kCamCtrl) + cc::Camera;
+            const float fovy = At<float>(cam, 0xC0), aspect = At<float>(Va(kProjAspect), 0);
+            LONG rpx = gap - big / 2 - 1;
+            if (rpx < 1) rpx = 1;
+            if (fovy > 1.0f && fovy < 170.0f && aspect > 0.5f && aspect < 8.0f)
+                SetTickRadius(atanf(rpx * 2.0f / w * tanf(fovy * 0.5f * 0.01745329252f) * aspect));
+            const float dx = (float)(ex - cx), dy = (float)(ey - cy), d = sqrtf(dx * dx + dy * dy);
+            if (d > rpx) ex = cx + (LONG)(dx * rpx / d), ey = cy + (LONG)(dy * rpx / d);
+        } else {
+            SetTickRadius(0.0f);
+        }
         const LONG a = th / 2, b = th - a;              // splits the thickness around the centre line
         // The dot turns red and grows while the aim rests on something that takes damage.
         const bool hot = AimOnTarget();
-        const LONG big = (LONG)(h * 0.006f) > th + 3 ? (LONG)(h * 0.006f) : th + 3;  // ~6 px at 1080p
         const LONG ds = hot ? big : th, da = ds / 2, db = ds - da;
         const D3DRECT marks[5] = {
             {cx - gap - len, cy - a, cx - gap, cy + b},        // left

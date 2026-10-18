@@ -427,19 +427,20 @@ void SetShotView(const float* eye, const float* tgt);
 void InitShotHook();
 void SetAimCentered();
 void NudgeAimPitch(float rad);
+float TakeAimPitchMove();
+bool RecentShot(DWORD ms);
+void SetGunOffset(float yaw, float pitch);
 
-// Centered aim: the aim camera starts as the game's own (no turn onto the gun: that jumped), then follows Leon's aim.
-// It locks on from the view on screen, so cutting the game's smoothing shows no jump.
-// Locked, it turns with Leon exactly and with the gun while the aim stick moves, and
-// ignores the gun otherwise: breathing and recoil move the reticle's dot, not the view. Leon's aim is pulled to the
-// middle instead (no view turn); the view only steps in when the gun strays more than kMaxOff from it.
+// Centered aim: the aim camera starts as the game's own (no turn onto the gun: that jumped) and locks on from the view
+// on screen, so cutting the game's smoothing shows no jump. Locked, it follows Leon's aim (heading, the stick's
+// sideways and vertical aim), never the gun itself: recoil and breathing move the reticle's dot, not the view, and
+// Leon's aim is pulled back to the middle.
 bool g_aimLocked = false;
 static float g_aimTime = 0.0f;
 static float g_relYaw = 0.0f, g_relPitch = 0.0f;          // camera direction: yaw relative to Leon's, pitch
-static float g_lastWantRel = 0.0f, g_lastWantPitch = 0.0f;  // the gun's, last frame
+static float g_lastSide = 0.0f;                             // the aim's sideways offset, last frame
 static float g_prevDir[3] = {};                             // the view handed on last frame
 static float g_prevLeonYaw = 0.0f;                          // and Leon's heading then
-static const float kMaxOff = 12.0f * 0.01745329f;
 static float g_lockTime = 0.0f;
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
@@ -466,8 +467,8 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     for (int i = 0; i < 3; ++i) cur[i] /= dist, want[i] /= wl;
     const float wantRel = WrapPi(atan2f(want[0], want[2]) - leonYaw);
     const float wantPitch = atan2f(want[1], sqrtf(want[0] * want[0] + want[2] * want[2]));
-    // The aim moves only with the stick: the game's aim values also shift a little while firing.
-    const bool moving = g_stickRx != 0.0f || g_stickRy != 0.0f;
+    const bool moving = g_stickRx != 0.0f || g_stickRy != 0.0f;  // for the log
+    const float side = At<float>(pl, 0x448);
 
     if (!g_aimLocked) {
         // The game's view as is until the free camera's tilt has faded. Then the lock takes over from the view on screen
@@ -486,34 +487,29 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
                 acosf(fminf(1.0f, dp)) * 57.3f);
         }
         for (int i = 0; i < 3; ++i) g_prevDir[i] = cur[i];
-    } else if (moving) {
-        g_relYaw = WrapPi(g_relYaw + WrapPi(wantRel - g_lastWantRel));
-        g_relPitch += wantPitch - g_lastWantPitch;
+    } else {
+        // Follow the aim, never the gun itself (its recoil and breathing): sideways the aim's offset from Leon's heading
+        // (cPlayer+0x448, the gun turns about 0.85 rad per unit), up and down the game's own changes to the aim (the sway
+        // anchor, radians; shot.cpp leaves out the mod's nudges). Leon's heading itself is in the view's yaw already.
+        g_relYaw = WrapPi(g_relYaw + (side - g_lastSide) * 0.85f);
+        g_relPitch += TakeAimPitchMove();
     }
-    g_lastWantRel = wantRel, g_lastWantPitch = wantPitch;
+    g_lastSide = side;
     g_prevLeonYaw = leonYaw;
     if (!g_aimLocked) return;
-    // Bring the gun to the middle, not the view to the gun: Leon turns by part of the sideways error (the view's
-    // direction kept), and the vertical part goes to the aim sway's anchor (shot.cpp). Slow enough that recoil kicks and
-    // most of the breathing still show on the dot; quicker right after the lock, where the game's aim pose starts a few
-    // degrees off. The vertical part rests while the stick moves (the view follows the gun's pitch then).
-    {
-        const float dy = WrapPi(wantRel - g_relYaw), dpi = wantPitch - g_relPitch;
-        const float k = 1.0f - expf(-dt / (g_aimTime - g_lockTime < 0.6f ? 0.12f : 0.35f));
+    // Bring the gun to the middle: Leon turns by part of the sideways error (the view's direction kept), the vertical
+    // part goes to the aim sway's anchor (shot.cpp). Paused for 0.3 s after a shot, so the recoil plays out instead of
+    // being pulled against. Until the gun is in, the reticle holds its dot inside the ticks (shot.cpp turns the laser and
+    // bullets to match).
+    const float dy = WrapPi(wantRel - g_relYaw), dpi = wantPitch - g_relPitch;
+    if (!RecentShot(300)) {
+        const float k = 1.0f - expf(-dt / 0.12f);
         float* ang = (float*)(pl + pl::Ang);
         ang[1] = WrapPi(ang[1] - dy * k);
         g_relYaw = WrapPi(g_relYaw + dy * k);  // this frame's view still uses the old heading: same direction
-        if (!moving) NudgeAimPitch(-dpi * k);
+        NudgeAimPitch(-dpi * k);
     }
-    // Never let the gun leave the middle by more than kMaxOff.
-    {
-        float dy = WrapPi(wantRel - g_relYaw), dpi = wantPitch - g_relPitch;
-        const float off = sqrtf(dy * dy + dpi * dpi);
-        if (off > kMaxOff) {
-            const float k = (off - kMaxOff) / off;
-            g_relYaw = WrapPi(g_relYaw + dy * k), g_relPitch += dpi * k;
-        }
-    }
+    SetGunOffset(dy, dpi);
     const float yaw = leonYaw + g_relYaw, cp = cosf(g_relPitch);
     tgt[0] = eye[0] + cp * sinf(yaw) * dist;
     tgt[1] = eye[1] + sinf(g_relPitch) * dist;

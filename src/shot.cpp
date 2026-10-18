@@ -3,10 +3,11 @@
 // with his breathing and the recoil, instead of the whole view. Hooks:
 //  - Aim sway (re4.h kFnSway): the game's sway (drift while the stick rests, a kick per shot) is dropped; the game gets
 //    the steady aim back.
-//  - Laser line (kFnLaserLine): records the gun's line for the crosshair. The laser's red dot is not spawned
-//    (kFnLaserDot): the reticle's own dot marks the aim.
-//  - Bullet (kFnBullet): each of Leon's shots is turned to a random point inside the current spread around its line
-//    (on top of the gun's own spread, e.g. the shotgun's).
+//  - Laser line (kFnLaserLine): records the gun's line for the crosshair. While the gun points outside the reticle's
+//    ticks (recoil, the aim settling) the reticle holds its dot at their edge and the laser is turned to match. The
+//    laser's red dot is not spawned (kFnLaserDot): the reticle's own dot marks the aim.
+//  - Bullet (kFnBullet): each of Leon's shots goes where the reticle's dot is, to a random point inside the current
+//    spread (on top of the gun's own spread, e.g. the shotgun's).
 // The spread works like the remakes': it opens while Leon walks, turns or fires and closes again while he holds still;
 // the reticle's ticks show it.
 #include "common.h"
@@ -40,8 +41,12 @@ void* g_origLaserDot = nullptr;
 }
 static float g_gunStart[3], g_gunEnd[3], g_gunHit[3];  // the laser (the gun's line) and its first hit
 static volatile DWORD g_gunTick = 0;
-static bool g_onTarget = false;  // the gun's line rests on something that takes damage
-static DWORD g_onTargetTick = 0;  // last time it did
+static float g_drawHit[3];        // the laser as drawn (held inside the ticks), cut at its first hit
+static bool g_onTarget = false;  // the drawn laser rests on something that takes damage
+static float g_offYaw = 0.0f, g_offPitch = 0.0f;  // the gun's line off the view's centre (radians, camera.cpp)
+static volatile DWORD g_offTick = 0;
+static float g_tickRad = 0.0f;   // how far off the centre the reticle's dot may sit (radians, crosshair.cpp)
+static volatile DWORD g_lastShotTick = 0;
 
 static float Dot(const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 static float Normalize(float* v) {
@@ -139,8 +144,35 @@ static void Scatter(float* dir, float r) {
 }
 
 // For the reticle: the aim rests on something that takes damage.
-// It stays red for 0.15 s after the line slips off, so the dot doesn't flicker on a target's edge.
-bool AimOnTarget() { return GetTickCount() - g_gunTick <= 100 && GetTickCount() - g_onTargetTick <= 150; }
+bool AimOnTarget() { return g_onTarget && GetTickCount() - g_gunTick <= 100; }
+
+// From the camera: where the gun's line sits relative to the view's centre. From the reticle: how far the dot may go.
+void SetGunOffset(float yaw, float pitch) { g_offYaw = yaw, g_offPitch = pitch, g_offTick = GetTickCount(); }
+void SetTickRadius(float r) { g_tickRad = r; }
+bool RecentShot(DWORD ms) { return GetTickCount() - g_lastShotTick < ms; }
+
+// The turn that brings the gun's line back inside the ticks (zero while it is inside): yaw and pitch to add.
+static bool HoldInside(float* cy, float* cp) {
+    *cy = *cp = 0.0f;
+    if (!Cfg().centeredAim || !AimCentered() || GetTickCount() - g_offTick > 100 || g_tickRad <= 0.0f) return false;
+    const float off = sqrtf(g_offYaw * g_offYaw + g_offPitch * g_offPitch);
+    if (off <= g_tickRad) return false;
+    const float k = g_tickRad / off - 1.0f;
+    *cy = g_offYaw * k, *cp = g_offPitch * k;
+    return true;
+}
+static void Turn(float* dir, float cy, float cp) {
+    float yaw, pitch;
+    YawPitch(dir, &yaw, &pitch);
+    FromYawPitch(yaw + cy, pitch + cp, dir);
+}
+
+// The laser as drawn, from the muzzle to its first hit (inside the ticks).
+bool DrawLine(float* start, float* hit) {
+    if (GetTickCount() - g_gunTick > 100) return false;
+    for (int i = 0; i < 3; ++i) start[i] = g_gunStart[i], hit[i] = g_drawHit[i];
+    return true;
+}
 
 // The gun's line, from the muzzle to its first hit, as the laser would show it without the mod turning it.
 bool GunLine(float* start, float* hit) {
@@ -158,8 +190,22 @@ static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, fl
     for (int i = 0; i < 3; ++i) g_gunStart[i] = start[i], g_gunEnd[i] = end[i], g_gunHit[i] = end[i];
     int em = 0, poly = 0;
     float s[3] = {start[0], start[1], start[2]};
-    const int hit = g_lineHit(s, g_gunHit, 0, 0, &em, &poly);
+    int hit = g_lineHit(s, g_gunHit, 0, 0, &em, &poly);
     g_gunTick = GetTickCount();
+    g_hideLaserDot = Cfg().centeredAim && AimCentered();
+    // Held inside the ticks: the drawn laser is turned with the reticle's dot.
+    float cy, cp;
+    for (int i = 0; i < 3; ++i) g_drawHit[i] = g_gunHit[i];
+    if (HoldInside(&cy, &cp)) {
+        float dir[3] = {end[0] - start[0], end[1] - start[1], end[2] - start[2]};
+        const float len = Normalize(dir);
+        if (len > 0.0f) {
+            Turn(dir, cy, cp);
+            for (int i = 0; i < 3; ++i) end[i] = start[i] + dir[i] * len, g_drawHit[i] = end[i];
+            em = poly = 0;
+            hit = g_lineHit(s, g_drawHit, 0, 0, &em, &poly);
+        }
+    }
     // Something that takes damage: an enemy or object with health left (the line hit only counts those: 2, or 3 on
     // some body parts), or a shootable surface close enough (LaserUpdate's own test).
     bool target = hit >= 2 && em != 0;
@@ -168,40 +214,32 @@ static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, fl
         const int i = ((f & 0x800000) ? 1 : 0) + ((f & 0x8000) ? 2 : 0) + ((f & 0x80) ? 4 : 0);
         const uintptr_t at = Va(kPolyAttr);
         float d2 = 0.0f;
-        for (int k = 0; k < 3; ++k) d2 += (g_gunHit[k] - start[k]) * (g_gunHit[k] - start[k]);
+        for (int k = 0; k < 3; ++k) d2 += (g_drawHit[k] - start[k]) * (g_drawHit[k] - start[k]);
         target = *(const uint8_t*)(at + 0x240 + i) && (*(const uint32_t*)(at + 0x20 + i * 0x44) & 2) &&
                  d2 < *(const float*)Va(kShootableDist2);
     }
     g_onTarget = target;
-    if (target) g_onTargetTick = GetTickCount();
-    static int s_log = 0;
-    static int s_lastHit = -1;
-    static uintptr_t s_lastEm = 0;
-    if (s_log < 80 && (hit != s_lastHit || (uintptr_t)em != s_lastEm)) {
-        ++s_log;
-        Log("aim at: hit %d em %p type %02X hp %d poly %08X -> %s", hit, (void*)em,
-            em && Readable((void*)em, 0x328) ? *(uint8_t*)(em + 0x100) : 0xFF,
-            em && Readable((void*)em, 0x328) ? *(int16_t*)(em + 0x324) : 0, poly, target ? "TARGET" : "-");
-    }
-    s_lastHit = hit, s_lastEm = (uintptr_t)em;
-    g_hideLaserDot = Cfg().centeredAim && AimCentered();
 }
 
 static void __cdecl HookBullet(uintptr_t owner, float* from, float* to, uint32_t wep, uint32_t a5, uint32_t a6) {
     static int logged = 0;
     if (owner && owner == *(uintptr_t*)Va(kPlayerPtr) && Cfg().centeredAim && AimCentered() &&
         GetTickCount() - g_viewTick <= 100 && Readable(from, 12) && Readable(to, 12)) {
+        g_lastShotTick = GetTickCount();
         const float scatter = g_spread;
         KickSpread();
         float dir[3] = {to[0] - from[0], to[1] - from[1], to[2] - from[2]};
         const float len = Normalize(dir);
-        if (len > 0.0f && scatter > 0.0f) {
+        float cy, cp;
+        const bool held = HoldInside(&cy, &cp);
+        if (len > 0.0f && (held || scatter > 0.0f)) {
+            if (held) Turn(dir, cy, cp);  // where the dot shows
             Scatter(dir, scatter);
             float nt[3];
             for (int i = 0; i < 3; ++i) nt[i] = from[i] + dir[i] * len;
             if (logged < 5) {
                 ++logged;
-                Log("shot: weapon %u, spread %.2f deg", wep & 0xFFFF, scatter * 57.3f);
+                Log("shot: weapon %u, spread %.2f deg%s", wep & 0xFFFF, scatter * 57.3f, held ? ", held inside" : "");
             }
             g_origBullet(owner, from, nt, wep, a5, a6);  // a copy: the caller's buffer stays as it was
             return;
@@ -211,7 +249,15 @@ static void __cdecl HookBullet(uintptr_t owner, float* from, float* to, uint32_t
 }
 
 static float g_pitchNudge = 0.0f;  // radians, applied at the next sway call
+static float g_pitchMove = 0.0f;   // the game's own changes to the anchor (the stick), for the camera
+static float g_anchorAfter = 0.0f;  // the anchor as the mod left it
+static bool g_haveAnchor = false;
 void NudgeAimPitch(float rad) { g_pitchNudge += rad; }
+float TakeAimPitchMove() {
+    const float m = g_pitchMove;
+    g_pitchMove = 0.0f;
+    return m;
+}
 
 typedef void(__cdecl* PFN_Sway)(uintptr_t pl, uint32_t mode, float* v, float* side);
 static PFN_Sway g_origSway = nullptr;
@@ -225,16 +271,18 @@ static void __cdecl HookSway(uintptr_t pl, uint32_t mode, float* v, float* side)
                     Readable((void*)(pl + 0x7D8), 4) && (sw = *(uintptr_t*)(pl + 0x7D8)) >= 0x10000 &&
                     Readable((void*)sw, 0x30);
     if (!on) {
-        g_swayOn = false;
+        g_swayOn = false, g_haveAnchor = false, g_pitchNudge = g_pitchMove = 0.0f;
         g_origSway(pl, mode, v, side);
         return;
     }
     g_origSway(pl, mode, v, side);
     // The camera's pull of the gun toward the crosshair (vertical part), on the anchor so the stick keeps it.
-    float a = At<float>(sw, 0x28) + g_pitchNudge;
+    const float before = At<float>(sw, 0x28);
+    if (g_haveAnchor) g_pitchMove += before - g_anchorAfter;
+    float a = fmaxf(-1.5707963f, fminf(1.5707963f, before + g_pitchNudge));
     g_pitchNudge = 0.0f;
-    a = fmaxf(-1.5707963f, fminf(1.5707963f, a));
     *(float*)(sw + 0x28) = a;
+    g_anchorAfter = a, g_haveAnchor = true;
     *v = a * 0.63661977f, *side = At<float>(sw, 0x2C);  // back to the anchor: no drift, no kick
     g_swayOn = true;
 }
