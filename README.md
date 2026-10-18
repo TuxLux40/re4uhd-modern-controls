@@ -5,34 +5,39 @@
 **Play the original Resident Evil 4 (2005) with modern, remake-style controls.**
 No more tank controls: move where you push the stick, look around freely, walk while you aim.
 
-[![Build](https://github.com/TuxLux40/re4og-modern-controls/actions/workflows/release.yml/badge.svg)](https://github.com/TuxLux40/re4og-modern-controls/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/TuxLux40/re4og-modern-controls?include_prereleases&label=download)](https://github.com/TuxLux40/re4og-modern-controls/releases)
+[![Build](https://github.com/TuxLux40/re4uhd-modern-controls/actions/workflows/release.yml/badge.svg)](https://github.com/TuxLux40/re4uhd-modern-controls/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/TuxLux40/re4uhd-modern-controls?include_prereleases&label=download)](https://github.com/TuxLux40/re4uhd-modern-controls/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Windows](https://img.shields.io/badge/Windows-supported-0078D6?logo=windows)
 ![Linux / Steam Deck](https://img.shields.io/badge/Linux%20%2F%20Steam%20Deck-tested-FCC624?logo=linux&logoColor=black)
 
 </div>
 
-> [!NOTE]
-> **Early version.** Everything below works, but expect rough edges. See [Planned](#planned) and
-> [Known issues](#known-issues).
+> [!WARNING]
+> **Beta branch.** This is the work in progress on the RE5-style shoulder camera and the remake-style crosshair. It
+> changes often and can feel rough. Download it from the
+> [**beta pre-release**](https://github.com/TuxLux40/re4uhd-modern-controls/releases/tag/beta), which is rebuilt on
+> every change to this branch. For the stable version, see the
+> [main branch](https://github.com/TuxLux40/re4uhd-modern-controls/tree/main).
 
 ## Features
 
 | | |
 |---|---|
 | 🕹️ **Camera-relative movement** | Push the left stick toward any direction on screen and Leon goes there. He runs by default; hold the run button to walk. |
-| 🎥 **Free camera** | The right stick turns the camera freely around Leon. Leave the stick alone while moving and it eases back behind him. It looks a little further down than the original and stops at walls. |
-| 🎯 **Aim where you look** | When you aim, Leon turns to face where the camera points. Aim with the right stick. |
+| 🎥 **Free camera over the shoulder** | The right stick turns the camera freely around Leon. It sits a little to the right, over his shoulder, like RE5 (`Shoulder=0` centres it). Leave the stick alone while moving and it eases back behind him. It stops at walls. |
+| 🎯 **Aim where you look** | Raise the gun and the view keeps looking where it looked while the camera moves in close over Leon's right shoulder, like RE5. Leon turns to aim there. Aim with the right stick. `KeepViewOnAim=0` swings the view to where Leon looks instead. |
 | 🕹️ **Tank controls still on the d-pad** | Modern controls on the stick, the original tank controls on the d-pad. Use whichever fits the moment. |
 | 🚶 **Walk while aiming** | Move with the left stick while aiming. RE4 has no strafe animations, so Leon glides. |
-| ➕ **Remake-style crosshair** | Like RE5: the camera sits over Leon's right shoulder, and raising the gun keeps the view's direction while the camera moves in closer; a small dot marks the middle outside of aiming too. The reticle stays in the middle and your shots go to it (`KeepViewOnAim=0` swings the view to where Leon looks instead). The camera follows your aim, never the gun, so recoil doesn't shake the view. The centre dot turns red while it rests on something that takes damage. Like the remakes, the ticks open up while you walk, turn or fire and close again when you hold still; shots land anywhere inside them. The original aim sway is gone, and the laser is just a beam now, without its red dot. `CenterDot=0` hides the dot outside of aiming; `CenteredAim=0` brings back the original camera, sway and laser, with the reticle following the laser. |
+| ➕ **Remake-style crosshair** | A reticle in the middle of the screen, and your shots and the laser go there. The camera follows your aim, never the gun, so recoil doesn't shake the view. The original aim sway is gone. Instead the ticks open up while you walk, turn or fire and close again when you hold still, and shots land anywhere inside them. The laser is just a beam now, without its red dot. `CenteredAim=0` brings back the original camera, sway and laser, with the reticle following the laser. |
+| 🔴 **Target indicator** | The centre dot turns red and grows while it rests on something that takes damage (enemies, lamps, barrels). Outside of aiming a small dot marks the middle of the screen (`CenterDot=0` hides it). |
 | 🛡️ **Ashley is safe from your shots** | With the camera free, it's easy to catch her in the crossfire. Your guns and knife no longer hurt her, the way her armour costume protects her; enemies and explosions still do. Can be switched off. |
 
 ## Install
 
-1. **Download** the latest `RE4ModernControls-vX.Y.Z.zip` from
-   [**Releases**](https://github.com/TuxLux40/re4og-modern-controls/releases) and extract it anywhere.
+1. **Download** `RE4ModernControls-v0.0.0-beta.<commit>.zip` from the
+   [**beta pre-release**](https://github.com/TuxLux40/re4uhd-modern-controls/releases/tag/beta) and extract it
+   anywhere.
 2. **Run the installer**
 
    | Windows | Linux / Steam Deck (Desktop Mode) |
@@ -141,22 +146,25 @@ texture packs and other file-based mods are unaffected.
 | ReShade, other Direct3D 9 overlays | 🟢 | The crosshair is drawn just before each frame is shown |
 | Other mods that use `xinput1_3.dll` (controller wrappers) | ❌ | Same file name, only one can be installed; the installer keeps a backup of the other one |
 
-Tried it on a setup that isn't listed? Please [open an issue](https://github.com/TuxLux40/re4og-modern-controls/issues)
+Tried it on a setup that isn't listed? Please [open an issue](https://github.com/TuxLux40/re4uhd-modern-controls/issues)
 either way, so this table can grow.
 
 ## Planned
 
 - [ ] In-game settings page: run by default, free or classic camera, modern or tank controls
-- [ ] Smoother camera turn when you start aiming
+- [ ] Leon's gun pointing exactly at the reticle (the laser bends toward it for now)
 - [ ] Reload on the move and quick turn in the RE3 (2020) style
 - [ ] Support for other game builds by finding the game's code instead of relying on fixed addresses
 
 ## Known issues
 
-- When you start aiming with the camera turned far away from Leon, the aim camera swings around quickly.
+- Beta: the shoulder distances (`ShoulderRight`, `ShoulderBack`, `ShoulderHeight`, `Shoulder`) are first guesses;
+  they can be changed in the ini while the game runs.
+- Beta: Leon's gun doesn't always point exactly at the reticle, so the laser leaves the gun at a slight angle. Shots
+  still go to the reticle.
 - Walking while aiming follows slopes and stops at walls; Ashley is kept on the ground behind you.
 
-Found a bug? [Open an issue](https://github.com/TuxLux40/re4og-modern-controls/issues), and attach
+Found a bug? [Open an issue](https://github.com/TuxLux40/re4uhd-modern-controls/issues), and attach
 `Bin32/RE4ModernControls.log` if you can.
 
 ## Credits
