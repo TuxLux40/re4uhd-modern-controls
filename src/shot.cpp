@@ -41,6 +41,7 @@ void* g_origLaserDot = nullptr;
 static float g_gunStart[3], g_gunEnd[3], g_gunHit[3];  // the laser (the gun's line) and its first hit
 static volatile DWORD g_gunTick = 0;
 static bool g_onTarget = false;  // the gun's line rests on something that takes damage
+static DWORD g_onTargetTick = 0;  // last time it did
 
 static float Dot(const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 static float Normalize(float* v) {
@@ -138,7 +139,8 @@ static void Scatter(float* dir, float r) {
 }
 
 // For the reticle: the aim rests on something that takes damage.
-bool AimOnTarget() { return g_onTarget && GetTickCount() - g_gunTick <= 100; }
+// It stays red for 0.15 s after the line slips off, so the dot doesn't flicker on a target's edge.
+bool AimOnTarget() { return GetTickCount() - g_gunTick <= 100 && GetTickCount() - g_onTargetTick <= 150; }
 
 // The gun's line, from the muzzle to its first hit, as the laser would show it without the mod turning it.
 bool GunLine(float* start, float* hit) {
@@ -171,6 +173,7 @@ static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, fl
                  d2 < *(const float*)Va(kShootableDist2);
     }
     g_onTarget = target;
+    if (target) g_onTargetTick = GetTickCount();
     static int s_log = 0;
     static int s_lastHit = -1;
     static uintptr_t s_lastEm = 0;
