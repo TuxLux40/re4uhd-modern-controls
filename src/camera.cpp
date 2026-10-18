@@ -429,16 +429,17 @@ void SetAimCentered();
 float TakeAimPitchMove();
 void SetAimPitch(float rad);
 
-// Centered aim (remake style): raising the gun keeps the view looking where it looked. The camera glides from the
-// free camera's spot to the game's over-the-shoulder spot (0.25 s, direction unchanged) and Leon swings his aim to the
-// middle of the screen (heading here, the vertical aim in shot.cpp). From then on the view follows Leon's aim
-// (heading, the stick's sideways and vertical aim), never the gun itself: recoil and breathing don't move it. The laser
-// and the shots go to the middle of it (shot.cpp).
+// Centered aim: raising the gun swings the view to where Leon looks (his heading, level) over kSwing, while the camera
+// glides from the free camera's spot to the game's over-the-shoulder spot. KeepViewOnAim=1 keeps the view's direction
+// instead (remake style) and swings Leon's aim to it. From then on the view follows Leon's aim (heading, the stick's
+// sideways and vertical aim), never the gun itself: recoil and breathing don't move it. The laser and the shots go to
+// the middle of it (shot.cpp).
 bool g_aimLocked = false;
+static const float kSwing = 0.35f;
 static float g_aimTime = 0.0f;
 static float g_relYaw = 0.0f, g_relPitch = 0.0f;  // view direction: yaw relative to Leon's, pitch
 static float g_lastSide = 0.0f;                     // the aim's sideways offset, last frame
-static float g_freeEye[3] = {};                     // where the free camera was when the aim started
+static float g_freeEye[3] = {}, g_freeDir[3] = {};  // the free camera when the aim started
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const uintptr_t pl = Player();
@@ -449,15 +450,19 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const float dist = sqrtf(cur[0] * cur[0] + cur[1] * cur[1] + cur[2] * cur[2]);
     if (dist < 1.0f) return;
     if (start || !g_aimLocked) {
-        // The view on screen (Camera_60, last frame's: the free camera) becomes the aim's direction.
+        // The view on screen (Camera_60, last frame's: the free camera) is where the swing starts.
         const float* m = (const float*)(Va(kCamCtrl) + cc::Camera);
         float shown[3] = {-m[2], -m[6], -m[10]};
         const float sl = sqrtf(shown[0] * shown[0] + shown[1] * shown[1] + shown[2] * shown[2]);
         if (sl < 0.5f) return;
-        for (int i = 0; i < 3; ++i) shown[i] /= sl;
-        g_relYaw = WrapPi(atan2f(shown[0], shown[2]) - leonYaw);
-        g_relPitch = atan2f(shown[1], sqrtf(shown[0] * shown[0] + shown[2] * shown[2]));
+        for (int i = 0; i < 3; ++i) g_freeDir[i] = shown[i] / sl;
         g_freeEye[0] = m[3], g_freeEye[1] = m[7], g_freeEye[2] = m[11];
+        if (Cfg().keepViewOnAim) {
+            g_relYaw = WrapPi(atan2f(g_freeDir[0], g_freeDir[2]) - leonYaw);
+            g_relPitch = atan2f(g_freeDir[1], sqrtf(g_freeDir[0] * g_freeDir[0] + g_freeDir[2] * g_freeDir[2]));
+        } else {
+            g_relYaw = 0.0f, g_relPitch = 0.0f;
+        }
         g_aimTime = 0.0f;
         g_aimLocked = true;
         SetAimPitch(g_relPitch);
@@ -472,13 +477,18 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     }
     g_lastSide = side;
     g_aimTime += dt;
-    // Glide from the free camera's spot to the shoulder.
-    const float t = g_aimTime / 0.25f < 1.0f ? g_aimTime / 0.25f : 1.0f, b = t * t * (3.0f - 2.0f * t);
+    const float t = g_aimTime / kSwing < 1.0f ? g_aimTime / kSwing : 1.0f, b = t * t * (3.0f - 2.0f * t);
+    // The camera's spot: from the free camera's to the shoulder. Its direction: from the free camera's to the aim's.
     for (int i = 0; i < 3; ++i) eye[i] = g_freeEye[i] + (eye[i] - g_freeEye[i]) * b;
     const float yaw = leonYaw + g_relYaw, cp = cosf(g_relPitch);
-    tgt[0] = eye[0] + cp * sinf(yaw) * dist;
-    tgt[1] = eye[1] + sinf(g_relPitch) * dist;
-    tgt[2] = eye[2] + cp * cosf(yaw) * dist;
+    float d[3] = {cp * sinf(yaw), sinf(g_relPitch), cp * cosf(yaw)};
+    if (b < 1.0f) {
+        float l = 0.0f;
+        for (int i = 0; i < 3; ++i) d[i] = g_freeDir[i] + (d[i] - g_freeDir[i]) * b, l += d[i] * d[i];
+        l = sqrtf(l);
+        for (int i = 0; i < 3; ++i) d[i] /= l;
+    }
+    for (int i = 0; i < 3; ++i) tgt[i] = eye[i] + d[i] * dist;
     SetAimCentered();
 }
 

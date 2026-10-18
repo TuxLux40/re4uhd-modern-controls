@@ -13,7 +13,8 @@ struct Config {
     float aimWalkSpeed = 1300;  // game units per second at full deflection
     bool crosshair = true;      // crosshair at the laser's end point
     bool centerDot = true;      // a small dot in the middle of the screen outside of aiming too (with CenteredAim)
-    bool centeredAim = true;    // while aiming the camera looks where the laser points: crosshair in the centre
+    bool centeredAim = true;
+    bool keepViewOnAim = false;  // raising the gun keeps the view's direction (remake style) instead of looking where Leon looks    // while aiming the camera looks where the laser points: crosshair in the centre
     bool protectAshley = true;  // Leon's guns and knife don't damage Ashley
     // [Camera]
     float defaultPitch = 0.0f;  // radians, + = looks further down than the game's camera (ini: degrees)
