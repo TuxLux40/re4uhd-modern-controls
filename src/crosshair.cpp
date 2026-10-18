@@ -51,16 +51,15 @@ bool AimCentered() { return GetTickCount() - g_centeredTick < 100; }
 // that aspect (4:3 by default), not from the screen's. The height is cropped to the screen's shape instead: a 16:9
 // screen shows the 4:3 width of view and 3/4 of its height (measured: off by exactly that factor otherwise).
 // Returns NDC (-1..1, y up).
-// The point the reticle marks: the laser's first hit. `drawn`: the laser as drawn (held inside the ticks); otherwise the
-// gun's own line, for the camera.
+// The point the reticle marks without the centered aim: the laser's first hit (the gun's own line).
 bool GunLine(float* start, float* hit);
-bool DrawLine(float* start, float* hit);
 float SpreadRadius();
 bool AimOnTarget();
-void SetTickRadius(float r);
-static void AimPoint(float* out, bool drawn) {
+bool CenteredView();
+bool FreeCameraActive();
+static void AimPoint(float* out) {
     float s[3], e[3];
-    if (drawn ? DrawLine(s, e) : GunLine(s, e)) {
+    if (GunLine(s, e)) {
         out[0] = e[0], out[1] = e[1], out[2] = e[2];
         return;
     }
@@ -71,7 +70,7 @@ static void AimPoint(float* out, bool drawn) {
 // For the camera: the point the crosshair marks while the laser is shown.
 bool LaserAimPoint(float* out, float* yaw, float* pivotXZ) {
     if (GetTickCount() - g_laserTick > 100) return false;
-    AimPoint(out, false);
+    AimPoint(out);
     *yaw = g_laserYaw;
     pivotXZ[0] = g_laserPivot[0];
     pivotXZ[1] = g_laserPivot[1];
@@ -85,7 +84,7 @@ static bool ProjectLaserEnd(float screenAspect, float* ndcX, float* ndcY) {
     const float aspect = At<float>(Va(kProjAspect), 0);
     if (!(fovy > 1.0f && fovy < 170.0f) || !(aspect > 0.5f && aspect < 8.0f)) return false;
     float p[3];
-    AimPoint(p, true);
+    AimPoint(p);
     const float d[3] = {p[0] - m[3], p[1] - m[7], p[2] - m[11]};
     // camera space = R^T * d (columns of R are the camera axes in world space)
     const float x = m[0] * d[0] + m[4] * d[1] + m[8] * d[2];
@@ -106,16 +105,16 @@ static bool ProjectLaserEnd(float screenAspect, float* ndcX, float* ndcY) {
 // --------------------------------------------------------------------------------------------------- drawing
 static void DrawCrosshair(IDirect3DDevice9* dev) {
     static float screenAspect = 16.0f / 9.0f;  // from the back buffer, below
+    // Centered aim: the reticle stays in the middle of the screen from the moment Leon raises the gun (the laser and the
+    // shots go there). Otherwise it sits on the laser's end.
     float nx = 0.0f, ny = 0.0f;
-    if (!Cfg().crosshair || GetTickCount() - g_laserTick > 100 || !ProjectLaserEnd(screenAspect, &nx, &ny)) {
-        SetTickRadius(0.0f);
+    const bool centered = CenteredView();
+    const bool aiming = GetTickCount() - g_laserTick <= 100;
+    // Outside of aiming, with the free camera: just the dot in the middle, where the aim will start.
+    const bool dotOnly = !aiming && Cfg().centeredAim && Cfg().centerDot && FreeCameraActive();
+    if (!Cfg().crosshair || (!aiming && !dotOnly) || (aiming && !centered && !ProjectLaserEnd(screenAspect, &nx, &ny)))
         return;
-    }
-    // The dot sits exactly on the laser's end. With the centered aim the ticks stay in the middle of the screen (the
-    // camera's aim); otherwise they surround the dot.
-    float sx = nx, sy = ny, tx = nx, ty = ny;
-    if (AimCentered()) tx = ty = 0.0f;
-    if (fabsf(sx) >= 1.0f || fabsf(sy) >= 1.0f) return;
+    if (fabsf(nx) >= 1.0f || fabsf(ny) >= 1.0f) return;
 
     IDirect3DSurface9* bb = nullptr;
     if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb)) || !bb) return;
@@ -131,16 +130,14 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
     if (w > 0.0f && h > 0.0f) screenAspect = w / h;
     {
         // Remake-style reticle (RE2/RE3/RE4 2019-2023): a small centre dot and four short ticks around it.
-        const LONG cx = (LONG)((tx * 0.5f + 0.5f) * w);   // ticks
-        const LONG cy = (LONG)((0.5f - ty * 0.5f) * h);
-        LONG ex = (LONG)((sx * 0.5f + 0.5f) * w);         // dot
-        LONG ey = (LONG)((0.5f - sy * 0.5f) * h);
+        const LONG cx = (LONG)((nx * 0.5f + 0.5f) * w);
+        const LONG cy = (LONG)((0.5f - ny * 0.5f) * h);
         const LONG th = h >= 1400 ? 3 : 2;              // line thickness and dot size
         const LONG len = (LONG)(h * 0.008f) + 1;        // tick length
         LONG gap = (LONG)(h * 0.011f) + 2;              // centre to the inner end of a tick
         // Centered aim: the ticks show the spread (remake style): they move out while Leon walks, turns or fires and
         // come back in while he holds still.
-        if (AimCentered()) {
+        if (centered) {
             const uintptr_t cam = Va(kCamCtrl) + cc::Camera;
             const float fovy = At<float>(cam, 0xC0), aspect = At<float>(Va(kProjAspect), 0);
             const float r = SpreadRadius();
@@ -150,35 +147,22 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
             }
         }
         const LONG big = (LONG)(h * 0.006f) > th + 3 ? (LONG)(h * 0.006f) : th + 3;  // red dot, ~6 px at 1080p
-        // Centered aim: the dot never leaves the space between the ticks. While the gun points further out (recoil, the
-        // aim settling) the dot waits at the edge; shot.cpp turns the laser and the bullets to that point.
-        if (AimCentered()) {
-            const uintptr_t cam = Va(kCamCtrl) + cc::Camera;
-            const float fovy = At<float>(cam, 0xC0), aspect = At<float>(Va(kProjAspect), 0);
-            LONG rpx = gap - big / 2 - 1;
-            if (rpx < 1) rpx = 1;
-            if (fovy > 1.0f && fovy < 170.0f && aspect > 0.5f && aspect < 8.0f)
-                SetTickRadius(atanf(rpx * 2.0f / w * tanf(fovy * 0.5f * 0.01745329252f) * aspect));
-            const float dx = (float)(ex - cx), dy = (float)(ey - cy), d = sqrtf(dx * dx + dy * dy);
-            if (d > rpx) ex = cx + (LONG)(dx * rpx / d), ey = cy + (LONG)(dy * rpx / d);
-        } else {
-            SetTickRadius(0.0f);
-        }
         const LONG a = th / 2, b = th - a;              // splits the thickness around the centre line
         // The dot turns red and grows while the aim rests on something that takes damage.
-        const bool hot = AimOnTarget();
+        const bool hot = centered && AimOnTarget();
         const LONG ds = hot ? big : th, da = ds / 2, db = ds - da;
         const D3DRECT marks[5] = {
             {cx - gap - len, cy - a, cx - gap, cy + b},        // left
             {cx + gap, cy - a, cx + gap + len, cy + b},        // right
             {cx - a, cy - gap - len, cx + b, cy - gap},        // top
             {cx - a, cy + gap, cx + b, cy + gap + len},        // bottom
-            {ex - da, ey - da, ex + db, ey + db},              // dot
+            {cx - da, cy - da, cx + db, cy + db},              // dot
         };
         D3DRECT edge[5];
         for (int i = 0; i < 5; ++i) edge[i] = {marks[i].x1 - 1, marks[i].y1 - 1, marks[i].x2 + 1, marks[i].y2 + 1};
-        dev->Clear(5, edge, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 30, 30, 30), 1.0f, 0);
-        dev->Clear(4, marks, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 245, 245, 245), 1.0f, 0);
+        const DWORD first = dotOnly ? 4 : 0;  // the dot alone: skip the ticks
+        dev->Clear(5 - first, edge + first, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 30, 30, 30), 1.0f, 0);
+        if (!dotOnly) dev->Clear(4, marks, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 245, 245, 245), 1.0f, 0);
         dev->Clear(1, &marks[4], D3DCLEAR_TARGET,
                    hot ? D3DCOLOR_ARGB(255, 235, 35, 30) : D3DCOLOR_ARGB(255, 245, 245, 245), 1.0f, 0);
     }

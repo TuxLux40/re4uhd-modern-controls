@@ -12,6 +12,7 @@ struct Config {
     bool aimWalk = true;        // left stick walks while aiming, right stick aims
     float aimWalkSpeed = 1300;  // game units per second at full deflection
     bool crosshair = true;      // crosshair at the laser's end point
+    bool centerDot = true;      // a small dot in the middle of the screen outside of aiming too (with CenteredAim)
     bool centeredAim = true;    // while aiming the camera looks where the laser points: crosshair in the centre
     bool protectAshley = true;  // Leon's guns and knife don't damage Ashley
     // [Camera]
