@@ -96,7 +96,7 @@ static void UpdateSpread(bool start) {
         const float turn = (fabsf(WrapAngle(yaw - g_lastViewYaw)) + fabsf(pitch - g_lastViewPitch)) / dt;  // rad/s
         const float move = sqrtf((px - g_lastPos[0]) * (px - g_lastPos[0]) + (pz - g_lastPos[1]) * (pz - g_lastPos[1])) / dt;
         float target = 0.0f;
-        target = fmaxf(target, max * fminf(1.0f, turn / 1.5f));        // full at about 85 deg/s
+        target = fmaxf(target, max * fminf(1.0f, turn / 0.8f));        // full at Leon's top aim turn (~46 deg/s)
         target = fmaxf(target, max * 0.7f * fminf(1.0f, move / 1500.0f));  // walking while aiming
         if (target > g_spread)
             g_spread += (target - g_spread) * (1.0f - expf(-dt / 0.08f));
