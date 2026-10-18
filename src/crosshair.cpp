@@ -137,9 +137,8 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
         return;
     }
     // Without the centered aim RE4 sways the aim, so the laser end shakes: the whole reticle follows it smoothed
-    // (~60 ms), steady like the remakes', still on the average aim point. With it the dot sits exactly on the laser
-    // (it shows the breathing and the recoil) and the ticks follow it slowly (~0.25 s), so they stay put. Both snap when
-    // the aim starts.
+    // (~60 ms), steady like the remakes', still on the average aim point. With it the ticks stay in the middle of the
+    // screen (the camera's aim) and the dot sits exactly on the laser, showing the breathing and the recoil.
     static float tx = 0.0f, ty = 0.0f;  // the ticks' centre
     if (!visible) {
         sx = tx = nx;
@@ -147,9 +146,7 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
         visible = true;
     } else if (AimCentered()) {
         sx = nx, sy = ny;
-        const float k = 1.0f - expf(-dt / 0.25f);
-        tx += (nx - tx) * k;
-        ty += (ny - ty) * k;
+        tx = ty = 0.0f;
     } else {
         const float k = 1.0f - expf(-dt / 0.06f);
         sx += (nx - sx) * k;
@@ -193,7 +190,8 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
         const LONG a = th / 2, b = th - a;              // splits the thickness around the centre line
         // The dot turns red and grows while the aim rests on something that takes damage.
         const bool hot = AimOnTarget();
-        const LONG ds = hot ? th + 2 : th, da = ds / 2, db = ds - da;
+        const LONG big = (LONG)(h * 0.006f) > th + 3 ? (LONG)(h * 0.006f) : th + 3;  // ~6 px at 1080p
+        const LONG ds = hot ? big : th, da = ds / 2, db = ds - da;
         const D3DRECT marks[5] = {
             {cx - gap - len, cy - a, cx - gap, cy + b},        // left
             {cx + gap, cy - a, cx + gap + len, cy + b},        // right

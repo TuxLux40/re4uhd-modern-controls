@@ -210,6 +210,9 @@ static void __cdecl HookBullet(uintptr_t owner, float* from, float* to, uint32_t
     g_origBullet(owner, from, to, wep, a5, a6);
 }
 
+static float g_pitchNudge = 0.0f;  // radians, applied at the next sway call
+void NudgeAimPitch(float rad) { g_pitchNudge += rad; }
+
 typedef void(__cdecl* PFN_Sway)(uintptr_t pl, uint32_t mode, float* v, float* side);
 static PFN_Sway g_origSway = nullptr;
 
@@ -227,7 +230,12 @@ static void __cdecl HookSway(uintptr_t pl, uint32_t mode, float* v, float* side)
         return;
     }
     g_origSway(pl, mode, v, side);
-    *v = At<float>(sw, 0x28) * 0.63661977f, *side = At<float>(sw, 0x2C);  // back to the anchor: no drift, no kick
+    // The camera's pull of the gun toward the crosshair (vertical part), on the anchor so the stick keeps it.
+    float a = At<float>(sw, 0x28) + g_pitchNudge;
+    g_pitchNudge = 0.0f;
+    a = fmaxf(-1.5707963f, fminf(1.5707963f, a));
+    *(float*)(sw + 0x28) = a;
+    *v = a * 0.63661977f, *side = At<float>(sw, 0x2C);  // back to the anchor: no drift, no kick
     g_swayOn = true;
 }
 

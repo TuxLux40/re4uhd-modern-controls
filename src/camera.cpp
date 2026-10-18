@@ -426,12 +426,13 @@ bool LaserAimPoint(float* out, float* yaw, float* pivotXZ);
 void SetShotView(const float* eye, const float* tgt);
 void InitShotHook();
 void SetAimCentered();
+void NudgeAimPitch(float rad);
 
 // Centered aim: the aim camera starts as the game's own (no turn onto the gun: that jumped), then follows Leon's aim.
 // It locks on from the view on screen, so cutting the game's smoothing shows no jump.
 // Locked, it turns with Leon exactly and with the gun while the aim stick moves, and
-// ignores the gun otherwise: breathing and recoil move the reticle's dot, not the view. It only steps in when the gun
-// strays more than kMaxOff from the middle.
+// ignores the gun otherwise: breathing and recoil move the reticle's dot, not the view. Leon's aim is pulled to the
+// middle instead (no view turn); the view only steps in when the gun strays more than kMaxOff from it.
 bool g_aimLocked = false;
 static float g_aimTime = 0.0f;
 static float g_relYaw = 0.0f, g_relPitch = 0.0f;          // camera direction: yaw relative to Leon's, pitch
@@ -491,6 +492,17 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     g_lastWantRel = wantRel, g_lastWantPitch = wantPitch;
     g_prevLeonYaw = leonYaw;
     if (!g_aimLocked) return;
+    // Bring the gun to the middle, not the view to the gun: Leon turns by part of the sideways error (the view's
+    // direction kept), and the vertical part goes to the aim sway's anchor (shot.cpp). Slow enough that recoil kicks and
+    // most of the breathing still show on the dot. Not while the stick moves: the view follows the gun then.
+    if (!moving) {
+        const float dy = WrapPi(wantRel - g_relYaw), dpi = wantPitch - g_relPitch;
+        const float k = 1.0f - expf(-dt / 0.35f);
+        float* ang = (float*)(pl + pl::Ang);
+        ang[1] = WrapPi(ang[1] - dy * k);
+        g_relYaw = WrapPi(g_relYaw + dy * k);  // this frame's view still uses the old heading: same direction
+        NudgeAimPitch(-dpi * k);
+    }
     // Never let the gun leave the middle by more than kMaxOff.
     {
         float dy = WrapPi(wantRel - g_relYaw), dpi = wantPitch - g_relPitch;
