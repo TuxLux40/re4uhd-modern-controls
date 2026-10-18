@@ -71,11 +71,21 @@ To uninstall, delete `Bin32/xinput1_3.dll` and the `RE4ModernControls.ini` / `.l
 |---|---|---|
 | **Left stick** | Move toward that direction on screen | Walk (Leon glides) |
 | **Right stick** | Turn the camera | Aim |
-| **Run button** | Hold to walk instead of run | |
-| **Aim** | Leon turns to where the camera looks. Tap it to recentre the camera behind Leon | |
+| **LT** | Aim: the camera moves in over Leon's shoulder | |
+| **RT** | Fire from the hip: Leon raises the gun, shoots at the centre dot and lowers it again | Fire |
+| **LB** | Ready the knife (RT swings) | |
+| **A** | Action: doors, items, ladders, kicks | |
+| **X** | Reload: the camera stays put, nothing happens with a full magazine | Reload |
+| **B** | Hold to walk instead of run | |
+| **Y / Back / Start** | Inventory / map / options (save, load) | |
+| **RB** | Ashley: wait / follow | |
 | **D-pad** | Classic tank controls, untouched | |
 
-Everything else (shoot, reload, knife, actions, quick turn) stays on the game's own buttons.
+This is the RE5-style layout (`[Buttons] Layout=RE5`). Set `GameType` to the layout chosen in the game's own options so the mod presses the right buttons: 1, 2 or 3 for Type I, II or III in its Controller Setup (Type I is the default). Menus, the inventory and cutscene prompts keep the game's own
+layout. The game's action prompts ("X Open", "X Save") would show X while A acts, so they are hidden
+(`HideActionPrompt=0` brings them back); set `DisableQTE = true` in re4_tweaks' `dinput8.ini` so quick-time events
+pass on their own, since their prompts go with them. `Layout=Original` keeps the game's buttons everywhere (RT aim, X action and fire, A run and reload, LT knife,
+Y map, Start inventory).
 
 > [!TIP]
 > **Best of both worlds:** the mod only changes the left stick. The d-pad still drives Leon with the original tank
@@ -153,7 +163,9 @@ either way, so this table can grow.
 
 - [ ] In-game settings page: run by default, free or classic camera, modern or tank controls
 - [ ] Leon's gun pointing exactly at the reticle (the laser bends toward it for now)
-- [ ] Reload on the move and quick turn in the RE3 (2020) style
+- [ ] Leon and Ashley fade out when the camera gets very close (Ashley ducking behind Leon)
+- [ ] Remake-style weapon quick select on the d-pad
+- [ ] Reload and fire from the hip on the move, like the remake (Leon stops for now): the legs play the normal walk (not the run) under the upper body's reload or shot, as RE3Controls does for RE5; and quick turn in the RE3 (2020) style
 - [ ] Support for other game builds by finding the game's code instead of relying on fixed addresses
 
 ## Known issues
@@ -162,6 +174,7 @@ either way, so this table can grow.
   they can be changed in the ini while the game runs.
 - Beta: Leon's gun doesn't always point exactly at the reticle, so the laser leaves the gun at a slight angle. Shots
   still go to the reticle.
+- Beta: reloading and firing from the hip stop Leon in place; walking through them needs its own leg animation.
 - Walking while aiming follows slopes and stops at walls; Ashley is kept on the ground behind you.
 
 Found a bug? [Open an issue](https://github.com/TuxLux40/re4uhd-modern-controls/issues), and attach

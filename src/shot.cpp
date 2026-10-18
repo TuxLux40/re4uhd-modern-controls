@@ -68,6 +68,13 @@ static uintptr_t PlayerPtr() {
 }
 
 // The widest spread of the weapon in hand (radians): half of its sway limit (TMP 0.122 -> 3.5 deg).
+// Firing opens it up to the weapon's whole sway limit (TMP 0.122 -> 7 deg): long bursts scatter like the original,
+// short ones stay tight.
+static float FireMax() {
+    const float r = *(const float*)Va(kSwayMax);
+    return r > 0.0f && r < 0.5f ? r : 0.12f;
+}
+static volatile DWORD g_lastShotTick = 0;
 static float SpreadMax() {
     const float r = *(const float*)Va(kSwayMax);
     return r > 0.0f && r < 0.5f ? r * 0.5f : 0.06f;
@@ -97,20 +104,22 @@ static void UpdateSpread(bool start) {
         target = fmaxf(target, max * 0.7f * fminf(1.0f, move / 1500.0f));  // walking while aiming
         if (target > g_spread)
             g_spread += (target - g_spread) * (1.0f - expf(-dt / 0.08f));
-        else
+        else if (GetTickCount() - g_lastShotTick > 200)  // closes once the trigger rests a moment
             g_spread += (target - g_spread) * (1.0f - expf(-dt / 0.3f));
     }
     g_lastViewYaw = yaw, g_lastViewPitch = pitch, g_lastPos[0] = px, g_lastPos[1] = pz;
     g_spreadHave = havePl;
 }
 
-// One shot: the spread opens (once per frame, so a shotgun blast counts once).
+// One shot: the spread opens by a tenth of the weapon's whole sway limit (once per frame, so a shotgun blast counts
+// once); about ten shots in a row reach it.
 static void KickSpread() {
     const DWORD now = GetTickCount();
+    g_lastShotTick = now;
     if (now == g_lastKickTick) return;
     g_lastKickTick = now;
-    const float max = SpreadMax();
-    g_spread = fminf(max, g_spread + max * 0.3f);
+    const float max = FireMax();
+    g_spread = fminf(max, g_spread + max * 0.1f);
 }
 
 // The aim camera handed on this frame (set by the camera hook while aiming with the centered aim): its turn opens the

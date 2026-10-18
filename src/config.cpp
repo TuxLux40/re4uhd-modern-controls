@@ -43,6 +43,11 @@ void LoadConfig() {
     char run[32];
     GetPrivateProfileStringA("Movement", "Run", "Always", run, sizeof(run), path);
     c.run = !lstrcmpiA(run, "Button") ? RUN_BUTTON : !lstrcmpiA(run, "OuterRing") ? RUN_OUTER_RING : RUN_ALWAYS;
+    char layout[32];
+    GetPrivateProfileStringA("Buttons", "Layout", "RE5", layout, sizeof(layout), path);
+    c.buttons = !lstrcmpiA(layout, "Original") ? BUTTONS_ORIGINAL : BUTTONS_RE5;
+    c.gameType = (int)ReadFloat(path, "Buttons", "GameType", 1.0f);
+    if (c.gameType < 1 || c.gameType > 3) c.gameType = 1;
     c.outerRing = ReadFloat(path, "Movement", "OuterRing", 0.85f);
     c.turnSpeed = ReadFloat(path, "Movement", "TurnSpeed", 515.0f) * kDeg;
     c.aimWalk = ReadFloat(path, "Aim", "Walk", 1.0f) != 0.0f;
@@ -50,6 +55,7 @@ void LoadConfig() {
     c.crosshair = ReadFloat(path, "Aim", "Crosshair", 1.0f) != 0.0f;
     c.centeredAim = ReadFloat(path, "Aim", "CenteredAim", 1.0f) != 0.0f;
     c.centerDot = ReadFloat(path, "Aim", "CenterDot", 1.0f) != 0.0f;
+    c.hideActionPrompt = ReadFloat(path, "Buttons", "HideActionPrompt", 1.0f) != 0.0f;
     c.keepViewOnAim = ReadFloat(path, "Aim", "KeepViewOnAim", 1.0f) != 0.0f;
     c.aimShoulderRight = ReadFloat(path, "Aim", "ShoulderRight", 400.0f);
     c.aimShoulderBack = ReadFloat(path, "Aim", "ShoulderBack", 750.0f);

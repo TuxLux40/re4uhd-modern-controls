@@ -52,6 +52,13 @@ static float g_room = -1.0f;                 // smoothed share of the camera dis
 static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
+// The centered aim hands its view back to the free camera when it ends: the free camera's heading and tilt when the
+// aim started, the aim view's offset from that heading then, and the aim view's heading and tilt now.
+static float g_aimFreeYaw = 0.0f, g_aimFreePitch = 0.0f, g_aimYawOff = 0.0f, g_aimPitch0 = 0.0f;
+static float g_aimViewYaw = 0.0f, g_aimViewPitch = 0.0f;
+static bool g_aimHandBack = false;
+static float g_zoomS = 0.0f;    // the aim camera's zoom, eased (0 = the free camera's distance and field of view)
+static float g_freeFov = 0.0f;  // the free camera's field of view, last free frame
 static bool g_wasMoving = false;
 enum View { VIEW_NONE, VIEW_FREE, VIEW_AIM };
 static volatile int g_view = VIEW_NONE;  // what the camera hook did on the last gameplay frame
@@ -60,6 +67,7 @@ static volatile int g_view = VIEW_NONE;  // what the camera hook did on the last
 // so the pad there is left alone).
 static bool Fresh() { return GetTickCount() - g_lastFrameTick < 100; }
 bool FreeCameraActive() { return g_view == VIEW_FREE && Fresh(); }
+bool GameplayView() { return g_view != VIEW_NONE && Fresh(); }  // the gameplay camera ran just now (no menu, no event)
 static bool AimActive() { return g_view == VIEW_AIM && Fresh(); }
 
 static float DeadZone(float v, float dz) {
@@ -72,6 +80,7 @@ static bool Aiming() {
 }
 
 static uintptr_t Player();
+bool QuickReload();
 
 // Free movement only while Leon stands, walks or runs (routine r_no_0 0, r_no_1 wait 0 / walk 1 / run 3). Grabbed,
 // hit, ladders and other actions keep the game's own stick handling, so Leon isn't turned while an enemy holds him.
@@ -262,9 +271,10 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     g_lastFrameTick = now;
     const float dt = DeltaSec();
 
-    if (Aiming()) {
+    if (Aiming() && !QuickReload()) {  // a reload with X alone keeps the free camera
         const bool wasAimingBefore = g_wasAiming;
         if (!g_wasAiming) {
+            g_aimFreeYaw = g_yaw, g_aimFreePitch = g_pitch, g_aimHandBack = false;
             // Turn Leon so the aim starts where the free camera looked.
             float* ang = (float*)(pl + pl::Ang);
             ang[1] = WrapPi(ang[1] + WrapPi(g_yaw - gameYaw));
@@ -284,6 +294,8 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         g_view = VIEW_AIM;
         if (cfg.centeredAim) {
             CenterAimCamera(eye, tgt, dt, !wasAimingBefore);
+            // The field of view zooms with the camera (the game's aim narrows it, 50 -> 45 deg); a quick aim keeps it.
+            if (g_freeFov > 1.0f && eye[7] > 1.0f) eye[7] = g_freeFov + (eye[7] - g_freeFov) * g_zoomS;
             SetShotView(eye, tgt);
             // Once the aim has settled, show this camera as is: the game's smoothing would let the view trail Leon's
             // turn by about 0.15 s.
@@ -342,7 +354,16 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
     }
     // Coming out of an aim, the camera comes back at its resting tilt (the aim was level), not at the steep look it
     // had before the aim; the tilt itself fades in over 0.3 s below.
-    if (g_wasAiming) g_pitch = cfg.defaultPitch;
+    if (eye[7] > 1.0f && eye[7] < 170.0f) g_freeFov = eye[7];
+    // The centered aim instead hands its view back: the free camera continues looking exactly where the aim looked.
+    if (g_wasAiming && g_aimHandBack) {
+        g_yaw = WrapPi(g_aimViewYaw - g_aimYawOff);
+        g_pitch = Clamp(g_aimFreePitch - (g_aimViewPitch - g_aimPitch0), -0.6f, 1.0f);
+        g_modBlend = 1.0f;
+        Log("cam: aim end, free camera yaw %.3f pitch %.1f", g_yaw, g_pitch * 57.3f);
+    } else if (g_wasAiming) {
+        g_pitch = cfg.defaultPitch;
+    }
     g_wasAiming = false;
 
     float* ang = (float*)(pl + pl::Ang);
@@ -457,6 +478,9 @@ static float g_relYaw = 0.0f, g_relPitch = 0.0f;  // view direction: yaw relativ
 static float g_lastSide = 0.0f;                     // the aim's sideways offset, last frame
 static float g_freeEye[3] = {}, g_freeDir[3] = {};  // the free camera when the aim started
 static float g_aimRoom = -1.0f;                     // share of the shoulder distance free of walls
+static float g_freeOff[3] = {};                     // the free camera's eye in the shoulder's frame: right, up, back
+static float g_zoom = 0.0f;                         // 0 = the free camera's distance, 1 = the aim camera's
+bool QuickAim();  // buttons.cpp: a reload or shot without the aim button; the camera stays where it is
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const uintptr_t pl = Player();
@@ -483,10 +507,24 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
             g_relYaw = 0.0f;
             g_relPitch = Clamp(atan2f(g_freeDir[1], sqrtf(g_freeDir[0] * g_freeDir[0] + g_freeDir[2] * g_freeDir[2])),
                                -1.0f, 1.0f);
+            g_aimYawOff = WrapPi(to - g_aimFreeYaw), g_aimPitch0 = g_relPitch, g_aimHandBack = true;
         } else {
             g_relYaw = 0.0f, g_relPitch = 0.0f;
         }
-        g_aimTime = 0.0f, g_aimRoom = -1.0f;
+        g_aimTime = 0.0f, g_aimRoom = -1.0f, g_zoom = 0.0f;
+        // The free camera's eye in the frame the aim camera turns with (right, up, back along the view), so a quick
+        // aim keeps it there and the zoom starts from it.
+        {
+            const float yaw0 = leonYaw + g_relYaw, p0 = g_relPitch;
+            const float d0[3] = {cosf(p0) * sinf(yaw0), sinf(p0), cosf(p0) * cosf(yaw0)};
+            const float rx0 = -cosf(yaw0), rz0 = sinf(yaw0);
+            const float sh[3] = {pos[0] + rx0 * cfg.aimShoulderRight, pos[1] + cfg.aimShoulderHeight,
+                                 pos[2] + rz0 * cfg.aimShoulderRight};
+            const float v[3] = {g_freeEye[0] - sh[0], g_freeEye[1] - sh[1], g_freeEye[2] - sh[2]};
+            const float hh = d0[0] * d0[0] + d0[2] * d0[2];
+            const float back = hh > 1e-4f ? -(v[0] * d0[0] + v[2] * d0[2]) / hh : 0.0f;
+            g_freeOff[0] = v[0] * rx0 + v[2] * rz0, g_freeOff[1] = v[1] + back * d0[1], g_freeOff[2] = back;
+        }
         g_aimLocked = true;
         SetAimPitch(g_relPitch);
         Log("cam: aim start, view %+.1f from leon, pitch %.1f", g_relYaw * 57.3f, g_relPitch * 57.3f);
@@ -518,8 +556,19 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const float rx = -cosf(yaw), rz = sinf(yaw);
     const float shoulder[3] = {pos[0] + rx * cfg.aimShoulderRight, pos[1] + cfg.aimShoulderHeight,
                                pos[2] + rz * cfg.aimShoulderRight};
+    // Zoom from the free camera's spot to the aim camera's over kSwing; a quick aim (reload, shot without the aim
+    // button) stays at the free camera's spot, and zooms in once the aim button takes over.
+    const float zt = QuickAim() ? 0.0f : 1.0f;
+    g_zoom = g_zoom < zt ? (g_zoom + dt / kSwing < zt ? g_zoom + dt / kSwing : zt)
+                         : (g_zoom - dt / kSwing > zt ? g_zoom - dt / kSwing : zt);
+    const float z = g_zoomS = g_zoom * g_zoom * (3.0f - 2.0f * g_zoom);
     float aimEye[3];
-    for (int i = 0; i < 3; ++i) aimEye[i] = shoulder[i] - d[i] * cfg.aimShoulderBack;
+    for (int i = 0; i < 3; ++i) {
+        const float up = i == 1 ? 1.0f : 0.0f, r = i == 0 ? rx : i == 2 ? rz : 0.0f;
+        const float closeIn = shoulder[i] - d[i] * cfg.aimShoulderBack;
+        const float stayOut = shoulder[i] + r * g_freeOff[0] + up * g_freeOff[1] - d[i] * g_freeOff[2];
+        aimEye[i] = stayOut + (closeIn - stayOut) * z;
+    }
     if (aimEye[1] < pos[1] + 250.0f) aimEye[1] = pos[1] + 250.0f;  // not into the floor
     // Walls: pull the camera toward the shoulder, in quickly, out slowly.
     const float want = FreeRoom(shoulder, aimEye);
@@ -527,8 +576,8 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     else g_aimRoom += (want - g_aimRoom) * (1.0f - expf(-dt / (want < g_aimRoom ? 0.05f : 0.4f)));
     if (g_aimRoom > want) g_aimRoom = want;
     for (int i = 0; i < 3; ++i) aimEye[i] = shoulder[i] + (aimEye[i] - shoulder[i]) * g_aimRoom;
-    // Gliding from the free camera.
-    for (int i = 0; i < 3; ++i) eye[i] = g_freeEye[i] + (aimEye[i] - g_freeEye[i]) * b, tgt[i] = eye[i] + d[i] * 1000.0f;
+    for (int i = 0; i < 3; ++i) eye[i] = aimEye[i], tgt[i] = eye[i] + d[i] * 1000.0f;
+    g_aimViewYaw = yaw, g_aimViewPitch = pitch;
     SetAimCentered();
 }
 

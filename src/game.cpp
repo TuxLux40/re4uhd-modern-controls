@@ -83,8 +83,12 @@ static void DebugInput(XGamepad& pad) {
     pad.bRightTrigger = (BYTE)st.rt;
 }
 
+void RemapButtons(XGamepad& pad);
+void PromptsTick();
 void TransformPad(DWORD, XGamepad& pad) {
     DebugInput(pad);
+    RemapButtons(pad);
+    PromptsTick();
     FreeCameraPad(pad);
     static DWORD last = 0;
     const DWORD now = GetTickCount();
@@ -132,7 +136,7 @@ static void __fastcall HookCamMove(uintptr_t self, void* edx) {
     }
 }
 
-static bool HookAt(uint32_t rva, const uint8_t* sig, size_t n, void* detour, void** orig, const char* name) {
+bool HookAt(uint32_t rva, const uint8_t* sig, size_t n, void* detour, void** orig, const char* name) {
     void* target = (void*)Va(rva);
     if (!SafeEqual(target, sig, n)) {
         Log("hook %s: unexpected code at %p, left alone (different exe build?)", name, target);
@@ -146,7 +150,11 @@ static bool HookAt(uint32_t rva, const uint8_t* sig, size_t n, void* detour, voi
     return true;
 }
 
+void InitButtonHooks();
+void InitPromptHooks();
 void InitGameHooks() {
+    InitButtonHooks();
+    InitPromptHooks();
     InitCameraHooks();
     HookAt(kFnCamCtrlMove, kSigCamCtrlMove, sizeof(kSigCamCtrlMove), (void*)HookCamMove, (void**)&g_origCamMove,
            "CameraControl::move");
