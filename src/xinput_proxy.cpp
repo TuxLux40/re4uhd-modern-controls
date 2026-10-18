@@ -60,6 +60,11 @@ static void EnsureReal() { InitOnceExecuteOnce(&g_once, LoadReal, nullptr, nullp
 static DWORD GetStateCommon(PFN_GetState fn, DWORD user, XState* st) {
     EnsureReal();
     DWORD rc = fn ? fn(user, st) : ERROR_DEVICE_NOT_CONNECTED;
+    // A debug script drives a virtual pad even with no controller connected.
+    if (user == 0 && st && rc != ERROR_SUCCESS && DebugInputPending()) {
+        ZeroMemory(st, sizeof(*st));
+        rc = ERROR_SUCCESS;
+    }
     if (user == 0 && st && rc == ERROR_SUCCESS) {
         TransformPad(user, st->Gamepad);
         // A scripted debug pad changes state without the real pad's packet counter moving; games that only react to

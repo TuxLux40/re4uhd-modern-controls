@@ -26,6 +26,21 @@ static DWORD g_stepStart = 0, g_lastScriptCheck = 0;
 
 bool DebugInputActive() { return g_step >= 0; }
 
+// A script is running or waiting to be read (checked at most every 200 ms).
+bool DebugInputPending() {
+    if (g_step >= 0) return true;
+    static DWORD last = 0;
+    static bool pending = false;
+    const DWORD now = GetTickCount();
+    if (now - last >= 200) {
+        last = now;
+        char path[MAX_PATH];
+        wsprintfA(path, "%sRE4MC_input.txt", ModDir());
+        pending = GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+    }
+    return pending;
+}
+
 static void DebugInput(XGamepad& pad) {
     const DWORD now = GetTickCount();
     if (g_step < 0 && now - g_lastScriptCheck >= 200) {
