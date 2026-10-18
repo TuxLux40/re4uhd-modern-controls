@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -28,7 +28,9 @@ jobs:
       - name: Version
         id: ver
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev.${GITHUB_SHA::7}"; fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"
+          elif [[ "$GITHUB_REF" == refs/heads/beta ]]; then v="0.0.0-beta.${GITHUB_SHA::7}"
+          else v="0.0.0-dev.${GITHUB_SHA::7}"; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - name: Build and package
@@ -121,3 +123,23 @@ jobs:
             --title "RE4 Modern Controls $GITHUB_REF_NAME" \
             --notes-file docs/INSTALL.txt \
             $([[ "$VERSION" == 0.* ]] && echo --prerelease)
+
+  beta:
+    needs: [build, windows]
+    if: github.ref == 'refs/heads/beta'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: RE4ModernControls-v${{ needs.build.outputs.version }}
+          path: dist
+      - name: Publish the rolling beta pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          gh release delete beta --yes --cleanup-tag || true
+          gh release create beta dist/*.zip --prerelease --target "$GITHUB_SHA" \
+            --title "RE4 Modern Controls beta ($VERSION)" \
+            --notes "Beta from the beta branch ($GITHUB_SHA): free camera, remake-style aim and crosshair. Replaced on every push to beta. Install as described in docs/INSTALL.txt."
