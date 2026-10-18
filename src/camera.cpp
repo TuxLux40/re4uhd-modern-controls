@@ -488,28 +488,53 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     g_lastSide = side;
     g_aimTime += dt;
     const float t = g_aimTime / kSwing < 1.0f ? g_aimTime / kSwing : 1.0f, b = t * t * (3.0f - 2.0f * t);
-    for (int i = 0; i < 3; ++i) eye[i] = g_freeEye[i] + (eye[i] - g_freeEye[i]) * b;
-    if (t < 1.0f) {
-        // Gliding: the aim direction is the point's (or Leon's look, level), plus any aiming done meanwhile.
-        float yaw, pitch;
-        if (keep) {
-            const float v[3] = {g_focus[0] - eye[0], g_focus[1] - eye[1], g_focus[2] - eye[2]};
-            yaw = atan2f(v[0], v[2]) + WrapPi(leonYaw - g_startLeonYaw);
-            pitch = atan2f(v[1], sqrtf(v[0] * v[0] + v[2] * v[2]));
-        } else {
-            yaw = leonYaw, pitch = 0.0f;
+    // The game's own aim camera this frame: its spot (eye) is placed for looking along its direction (cur).
+    const float gameYaw = atan2f(cur[0], cur[2]), gamePitch = atan2f(cur[1], sqrtf(cur[0] * cur[0] + cur[2] * cur[2]));
+    const float* lpos = (const float*)(pl + pl::Pos);
+    const float pivot[3] = {lpos[0], tgt[1], lpos[2]};
+    // Its spot circled around Leon to look along (yaw, pitch) instead: Leon keeps his place on screen whichever way the
+    // view looks (like the remakes' camera), instead of moving into the middle.
+    auto orbit = [&](float yaw, float pitch, float* out) {
+        for (int i = 0; i < 3; ++i) out[i] = eye[i];
+        float dp = -(pitch - gamePitch);
+        dp = dp > 0.5f ? 0.5f : (dp < -0.5f ? -0.5f : dp);
+        RotatePitch(out, pivot, sinf(gameYaw), cosf(gameYaw), cosf(dp), sinf(dp));
+        const float dy = WrapPi(yaw - gameYaw);
+        RotateYaw(out, pivot, cosf(dy), sinf(dy));
+    };
+    // Gliding: from the free camera's spot to the circled shoulder spot.
+    auto glide = [&](float yaw, float pitch, float* out) {
+        float aim[3];
+        orbit(yaw, pitch, aim);
+        for (int i = 0; i < 3; ++i) out[i] = g_freeEye[i] + (aim[i] - g_freeEye[i]) * b;
+    };
+    float camEye[3], d[3];
+    if (t < 1.0f && keep) {
+        // The direction keeps the point in the middle as seen from the moving spot (two passes: the spot depends on the
+        // direction), plus any aiming done meanwhile.
+        float yaw = leonYaw + g_relYaw, pitch = g_relPitch;
+        for (int pass = 0; pass < 2; ++pass) {
+            glide(yaw, pitch, camEye);
+            const float v[3] = {g_focus[0] - camEye[0], g_focus[1] - camEye[1], g_focus[2] - camEye[2]};
+            yaw = atan2f(v[0], v[2]) + WrapPi(leonYaw - g_startLeonYaw) + g_glideYaw;
+            pitch = atan2f(v[1], sqrtf(v[0] * v[0] + v[2] * v[2])) + g_glidePitch;
         }
-        g_relYaw = WrapPi(yaw + g_glideYaw - leonYaw), g_relPitch = pitch + g_glidePitch;
+        g_relYaw = WrapPi(yaw - leonYaw), g_relPitch = pitch;
+        const float cp = cosf(pitch);
+        d[0] = cp * sinf(yaw), d[1] = sinf(pitch), d[2] = cp * cosf(yaw);
+    } else {
+        if (t < 1.0f) g_relYaw = WrapPi(g_glideYaw), g_relPitch = g_glidePitch;  // swinging to Leon's look, level
+        const float yaw = leonYaw + g_relYaw, cp = cosf(g_relPitch);
+        d[0] = cp * sinf(yaw), d[1] = sinf(g_relPitch), d[2] = cp * cosf(yaw);
+        glide(yaw, g_relPitch, camEye);
+        if (b < 1.0f) {  // from the free camera's direction to Leon's look
+            float l = 0.0f;
+            for (int i = 0; i < 3; ++i) d[i] = g_freeDir[i] + (d[i] - g_freeDir[i]) * b, l += d[i] * d[i];
+            l = sqrtf(l);
+            for (int i = 0; i < 3; ++i) d[i] /= l;
+        }
     }
-    const float yaw = leonYaw + g_relYaw, cp = cosf(g_relPitch);
-    float d[3] = {cp * sinf(yaw), sinf(g_relPitch), cp * cosf(yaw)};
-    if (!keep && b < 1.0f) {  // from the free camera's direction to Leon's look
-        float l = 0.0f;
-        for (int i = 0; i < 3; ++i) d[i] = g_freeDir[i] + (d[i] - g_freeDir[i]) * b, l += d[i] * d[i];
-        l = sqrtf(l);
-        for (int i = 0; i < 3; ++i) d[i] /= l;
-    }
-    for (int i = 0; i < 3; ++i) tgt[i] = eye[i] + d[i] * dist;
+    for (int i = 0; i < 3; ++i) eye[i] = camEye[i], tgt[i] = camEye[i] + d[i] * dist;
     SetAimCentered();
 }
 
