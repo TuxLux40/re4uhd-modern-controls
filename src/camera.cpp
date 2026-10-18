@@ -228,7 +228,7 @@ static void RotatePitch(float* p, const float* pivot, float fx, float fz, float 
 }
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start);
-extern float g_aimFollow;
+extern bool g_aimLocked;
 void SetShotView(const float* eye, const float* tgt);
 bool GunLine(float* start, float* hit);
 
@@ -287,7 +287,7 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             SetShotView(eye, tgt);
             // Once the aim has settled, show this camera as is: the game's smoothing would let the view trail Leon's
             // turn by about 0.15 s.
-            if (g_aimFollow >= 1.0f) At<uint32_t>(Va(kCamSmooth), kCamSmoothCut) |= 1;
+            if (g_aimLocked) At<uint32_t>(Va(kCamSmooth), kCamSmoothCut) |= 1;
             // Measurement: while turning, how far the gun's line trails the camera, and the aim values behind it.
             static int s_diag = 0;
             static DWORD s_diagTick = 0;
@@ -427,22 +427,27 @@ void SetShotView(const float* eye, const float* tgt);
 void InitShotHook();
 void SetAimCentered();
 
-// Centered aim: turns the aim camera (eye kept) to follow Leon's aim, so the crosshair sits in the middle of the screen.
-// Blended in over 0.2 s when the aim starts. Afterwards the camera follows his steady aim, not the gun itself: it turns
-// with Leon exactly, catches up with the gun at once while the aim moves (stick, or the game's aim values), and
-// otherwise drifts toward the gun only slowly. His breathing and the recoil move the crosshair, not the whole view.
-float g_aimFollow = 0.0f;
-static float g_relYaw = 0.0f, g_relPitch = 0.0f;  // camera direction: yaw relative to Leon's, pitch
-static float g_lastSide = 0.0f, g_lastV = 0.0f;
+// Centered aim: the aim camera starts as the game's own (no turn onto the gun: that jumped), then follows Leon's aim.
+// It locks on once the game's view has settled (its smoothing caught up), so cutting the smoothing shows no jump.
+// Locked, it turns with Leon exactly and with the gun while the aim stick moves, and
+// ignores the gun otherwise: breathing and recoil move the reticle's dot, not the view. It only steps in when the gun
+// strays more than kMaxOff from the middle.
+bool g_aimLocked = false;
+static float g_aimTime = 0.0f;
+static float g_relYaw = 0.0f, g_relPitch = 0.0f;          // camera direction: yaw relative to Leon's, pitch
+static float g_lastWantRel = 0.0f, g_lastWantPitch = 0.0f;  // the gun's, last frame
+static float g_prevDir[3] = {};                             // the view handed on last frame
+static const float kMaxOff = 6.0f * 0.01745329f;
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     float p[3], laserYaw, pivotXZ[2];
-    if (start) g_aimFollow = 0.0f;
+    if (start) g_aimLocked = false, g_aimTime = 0.0f;
     const uintptr_t pl = Player();
     if (!pl || !LaserAimPoint(p, &laserYaw, pivotXZ)) {
-        g_aimFollow = 0.0f;
+        g_aimLocked = false, g_aimTime = 0.0f;
         return;
     }
+    g_aimTime += dt;
     // Turn the point with Leon by however far he turned since the laser was computed.
     const float leonYaw = At<float>(pl, pl::Ang + 4);
     {
@@ -458,26 +463,42 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     for (int i = 0; i < 3; ++i) cur[i] /= dist, want[i] /= wl;
     const float wantRel = WrapPi(atan2f(want[0], want[2]) - leonYaw);
     const float wantPitch = atan2f(want[1], sqrtf(want[0] * want[0] + want[2] * want[2]));
-    const float side = At<float>(pl, 0x448), v = *(float*)Va(kAimV);
-    const bool moving = g_stickRx != 0.0f || g_stickRy != 0.0f || fabsf(side - g_lastSide) > 1e-3f ||
-                        fabsf(v - g_lastV) > 1e-3f;
-    g_lastSide = side, g_lastV = v;
-    if (g_aimFollow < 1.0f) {
-        g_relYaw = wantRel, g_relPitch = wantPitch;
-    } else {
-        const float k = 1.0f - expf(-dt / (moving ? 0.04f : 2.5f));
-        g_relYaw = WrapPi(g_relYaw + WrapPi(wantRel - g_relYaw) * k);
-        g_relPitch += (wantPitch - g_relPitch) * k;
+    // The aim moves only with the stick: the game's aim values also shift a little while firing.
+    const bool moving = g_stickRx != 0.0f || g_stickRy != 0.0f;
+
+    if (!g_aimLocked) {
+        // The game's view as is. Settled: the free camera's tilt has faded and the rendered view (Camera_60, last
+        // frame's result) has caught up with what was handed on last frame.
+        g_relYaw = WrapPi(atan2f(cur[0], cur[2]) - leonYaw);
+        g_relPitch = atan2f(cur[1], sqrtf(cur[0] * cur[0] + cur[2] * cur[2]));
+        const float* m = (const float*)(Va(kCamCtrl) + cc::Camera);
+        const float shown[3] = {-m[2], -m[6], -m[10]};
+        const float dp = shown[0] * g_prevDir[0] + shown[1] * g_prevDir[1] + shown[2] * g_prevDir[2];
+        if (g_aimTime > 1.5f || (g_aimTime > 0.1f && g_modBlend <= 0.0f && dp > 0.99998f)) {  // 0.36 deg
+            g_aimLocked = true;
+            Log("cam: aim locked after %.2f s (view off by %.2f deg)", g_aimTime, acosf(fminf(1.0f, dp)) * 57.3f);
+        }
+        for (int i = 0; i < 3; ++i) g_prevDir[i] = cur[i];
+    } else if (moving) {
+        g_relYaw = WrapPi(g_relYaw + WrapPi(wantRel - g_lastWantRel));
+        g_relPitch += wantPitch - g_lastWantPitch;
+    }
+    g_lastWantRel = wantRel, g_lastWantPitch = wantPitch;
+    if (!g_aimLocked) return;
+    // Never let the gun leave the middle by more than kMaxOff.
+    {
+        float dy = WrapPi(wantRel - g_relYaw), dpi = wantPitch - g_relPitch;
+        const float off = sqrtf(dy * dy + dpi * dpi);
+        if (off > kMaxOff) {
+            const float k = (off - kMaxOff) / off;
+            g_relYaw = WrapPi(g_relYaw + dy * k), g_relPitch += dpi * k;
+        }
     }
     const float yaw = leonYaw + g_relYaw, cp = cosf(g_relPitch);
-    const float aim[3] = {cp * sinf(yaw), sinf(g_relPitch), cp * cosf(yaw)};
-    g_aimFollow = g_aimFollow + dt / 0.2f < 1.0f ? g_aimFollow + dt / 0.2f : 1.0f;
-    const float b = g_aimFollow * g_aimFollow * (3.0f - 2.0f * g_aimFollow);
-    float d[3], dl = 0.0f;
-    for (int i = 0; i < 3; ++i) d[i] = cur[i] + (aim[i] - cur[i]) * b, dl += d[i] * d[i];
-    dl = sqrtf(dl);
-    for (int i = 0; i < 3; ++i) tgt[i] = eye[i] + d[i] / dl * dist;
-    if (g_aimFollow >= 1.0f) SetAimCentered();
+    tgt[0] = eye[0] + cp * sinf(yaw) * dist;
+    tgt[1] = eye[1] + sinf(g_relPitch) * dist;
+    tgt[2] = eye[2] + cp * cosf(yaw) * dist;
+    SetAimCentered();
     // Measurement: how far the gun's line sits from the middle, and how often the aim counts as moving.
     static int s_log = 0, s_frames = 0, s_moving = 0;
     static float s_maxOff = 0.0f;

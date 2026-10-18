@@ -21,7 +21,6 @@ using namespace re4;
 static volatile DWORD g_laserTick = 0;  // last frame the game drew the laser
 static float g_laserYaw = 0.0f;         // Leon's yaw and position (x, z) at that moment
 static float g_laserPivot[2] = {};
-static volatile bool g_onTarget = false;  // the beam rests on something that takes damage (the game's own check)
 
 // --------------------------------------------------------------------------------------------------- laser hook
 typedef void(__fastcall* PFN_Laser)(uintptr_t self, void* edx, char draw, char b, char c);
@@ -31,7 +30,6 @@ static void __fastcall HookLaser(uintptr_t self, void* edx, char draw, char b, c
     g_origLaser(self, edx, draw, b, c);
     if (draw) {
         g_laserTick = GetTickCount();
-        g_onTarget = !b && *(const uint8_t*)Va(kLaserOnTarget) != 0;
         // Leon's heading when the laser was computed: the camera may run a frame later, after he turned further.
         const uintptr_t pl = *(uintptr_t*)Va(kPlayerPtr);
         if (pl >= 0x10000 && Readable((void*)pl, 0x200)) {
@@ -60,6 +58,7 @@ static float g_depth = -1.0f;
 static DWORD g_depthTick = 0;
 bool GunLine(float* start, float* hit);
 float SpreadRadius();
+bool AimOnTarget();
 static void AimPoint(float* out) {
     // The gun's line as the laser shows it, cut at its first hit.
     float gs[3], ge[3];
@@ -137,17 +136,25 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
         visible = false;
         return;
     }
-    // Without the centered aim RE4 sways the aim, so the laser end shakes: the reticle follows it smoothed (~60 ms),
-    // steady like the remakes', still on the average aim point. With it the sway is gone and the reticle stays exactly on
-    // the laser (it shows the breathing and the recoil). It snaps when the aim starts.
-    if (!visible || AimCentered()) {
-        sx = nx;
-        sy = ny;
+    // Without the centered aim RE4 sways the aim, so the laser end shakes: the whole reticle follows it smoothed
+    // (~60 ms), steady like the remakes', still on the average aim point. With it the dot sits exactly on the laser
+    // (it shows the breathing and the recoil) and the ticks follow it slowly (~0.25 s), so they stay put. Both snap when
+    // the aim starts.
+    static float tx = 0.0f, ty = 0.0f;  // the ticks' centre
+    if (!visible) {
+        sx = tx = nx;
+        sy = ty = ny;
         visible = true;
+    } else if (AimCentered()) {
+        sx = nx, sy = ny;
+        const float k = 1.0f - expf(-dt / 0.25f);
+        tx += (nx - tx) * k;
+        ty += (ny - ty) * k;
     } else {
         const float k = 1.0f - expf(-dt / 0.06f);
         sx += (nx - sx) * k;
         sy += (ny - sy) * k;
+        tx = sx, ty = sy;
     }
     if (fabsf(sx) >= 1.0f || fabsf(sy) >= 1.0f) return;
 
@@ -165,8 +172,10 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
     if (w > 0.0f && h > 0.0f) screenAspect = w / h;
     {
         // Remake-style reticle (RE2/RE3/RE4 2019-2023): a small centre dot and four short ticks around it.
-        const LONG cx = (LONG)((sx * 0.5f + 0.5f) * w);
-        const LONG cy = (LONG)((0.5f - sy * 0.5f) * h);
+        const LONG cx = (LONG)((tx * 0.5f + 0.5f) * w);   // ticks
+        const LONG cy = (LONG)((0.5f - ty * 0.5f) * h);
+        const LONG ex = (LONG)((sx * 0.5f + 0.5f) * w);   // dot
+        const LONG ey = (LONG)((0.5f - sy * 0.5f) * h);
         const LONG th = h >= 1400 ? 3 : 2;              // line thickness and dot size
         const LONG len = (LONG)(h * 0.008f) + 1;        // tick length
         LONG gap = (LONG)(h * 0.011f) + 2;              // centre to the inner end of a tick
@@ -183,14 +192,14 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
         }
         const LONG a = th / 2, b = th - a;              // splits the thickness around the centre line
         // The dot turns red and grows while the aim rests on something that takes damage.
-        const bool hot = g_onTarget;
+        const bool hot = AimOnTarget();
         const LONG ds = hot ? th + 2 : th, da = ds / 2, db = ds - da;
         const D3DRECT marks[5] = {
             {cx - gap - len, cy - a, cx - gap, cy + b},        // left
             {cx + gap, cy - a, cx + gap + len, cy + b},        // right
             {cx - a, cy - gap - len, cx + b, cy - gap},        // top
             {cx - a, cy + gap, cx + b, cy + gap + len},        // bottom
-            {cx - da, cy - da, cx + db, cy + db},              // dot
+            {ex - da, ey - da, ex + db, ey + db},              // dot
         };
         D3DRECT edge[5];
         for (int i = 0; i < 5; ++i) edge[i] = {marks[i].x1 - 1, marks[i].y1 - 1, marks[i].x2 + 1, marks[i].y2 + 1};

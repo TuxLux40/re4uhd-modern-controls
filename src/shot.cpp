@@ -40,6 +40,7 @@ void* g_origLaserDot = nullptr;
 }
 static float g_gunStart[3], g_gunEnd[3], g_gunHit[3];  // the laser (the gun's line) and its first hit
 static volatile DWORD g_gunTick = 0;
+static bool g_onTarget = false;  // the gun's line rests on something that takes damage
 
 static float Dot(const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 static float Normalize(float* v) {
@@ -136,6 +137,9 @@ static void Scatter(float* dir, float r) {
     FromYawPitch(yaw + d * cosf(a) / (c > 0.2f ? c : 0.2f), pitch + d * sinf(a), dir);
 }
 
+// For the reticle: the aim rests on something that takes damage.
+bool AimOnTarget() { return g_onTarget && GetTickCount() - g_gunTick <= 100; }
+
 // The gun's line, from the muzzle to its first hit, as the laser would show it without the mod turning it.
 bool GunLine(float* start, float* hit) {
     if (GetTickCount() - g_gunTick > 100) return false;
@@ -152,8 +156,31 @@ static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, fl
     for (int i = 0; i < 3; ++i) g_gunStart[i] = start[i], g_gunEnd[i] = end[i], g_gunHit[i] = end[i];
     int em = 0, poly = 0;
     float s[3] = {start[0], start[1], start[2]};
-    g_lineHit(s, g_gunHit, 0, 0, &em, &poly);
+    const int hit = g_lineHit(s, g_gunHit, 0, 0, &em, &poly);
     g_gunTick = GetTickCount();
+    // Something that takes damage: an enemy or object with health left (the line hit only counts those: 2, or 3 on
+    // some body parts), or a shootable surface close enough (LaserUpdate's own test).
+    bool target = hit >= 2 && em != 0;
+    if (hit == 1) {
+        const uint32_t f = (uint32_t)poly;
+        const int i = ((f & 0x800000) ? 1 : 0) + ((f & 0x8000) ? 2 : 0) + ((f & 0x80) ? 4 : 0);
+        const uintptr_t at = Va(kPolyAttr);
+        float d2 = 0.0f;
+        for (int k = 0; k < 3; ++k) d2 += (g_gunHit[k] - start[k]) * (g_gunHit[k] - start[k]);
+        target = *(const uint8_t*)(at + 0x240 + i) && (*(const uint32_t*)(at + 0x20 + i * 0x44) & 2) &&
+                 d2 < *(const float*)Va(kShootableDist2);
+    }
+    g_onTarget = target;
+    static int s_log = 0;
+    static int s_lastHit = -1;
+    static uintptr_t s_lastEm = 0;
+    if (s_log < 80 && (hit != s_lastHit || (uintptr_t)em != s_lastEm)) {
+        ++s_log;
+        Log("aim at: hit %d em %p type %02X hp %d poly %08X -> %s", hit, (void*)em,
+            em && Readable((void*)em, 0x328) ? *(uint8_t*)(em + 0x100) : 0xFF,
+            em && Readable((void*)em, 0x328) ? *(int16_t*)(em + 0x324) : 0, poly, target ? "TARGET" : "-");
+    }
+    s_lastHit = hit, s_lastEm = (uintptr_t)em;
     g_hideLaserDot = Cfg().centeredAim && AimCentered();
 }
 
