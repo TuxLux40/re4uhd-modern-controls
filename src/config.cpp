@@ -51,13 +51,16 @@ void LoadConfig() {
     c.centeredAim = ReadFloat(path, "Aim", "CenteredAim", 1.0f) != 0.0f;
     c.centerDot = ReadFloat(path, "Aim", "CenterDot", 1.0f) != 0.0f;
     c.keepViewOnAim = ReadFloat(path, "Aim", "KeepViewOnAim", 1.0f) != 0.0f;
-    c.aimShoulderRight = ReadFloat(path, "Aim", "ShoulderRight", 450.0f);
-    c.aimShoulderBack = ReadFloat(path, "Aim", "ShoulderBack", 1100.0f);
+    c.aimShoulderRight = ReadFloat(path, "Aim", "ShoulderRight", 400.0f);
+    c.aimShoulderBack = ReadFloat(path, "Aim", "ShoulderBack", 750.0f);
     c.aimShoulderHeight = ReadFloat(path, "Aim", "ShoulderHeight", 1550.0f);
     c.protectAshley = ReadFloat(path, "Aim", "ProtectAshley", 1.0f) != 0.0f;
     c.defaultPitch = ReadFloat(path, "Camera", "DefaultPitch", 12.0f) * kDeg;
     c.height = ReadFloat(path, "Camera", "Height", 0.0f);
     c.shoulder = ReadFloat(path, "Camera", "Shoulder", 300.0f);
+    c.distance = ReadFloat(path, "Camera", "Distance", 0.6f);
+    if (c.distance < 0.2f) c.distance = 0.2f;
+    if (c.distance > 1.0f) c.distance = 1.0f;
     c.yawSpeed = ReadFloat(path, "Camera", "YawSpeed", 170.0f) * kDeg;
     c.pitchSpeed = ReadFloat(path, "Camera", "PitchSpeed", 100.0f) * kDeg;
     c.autoFollow = ReadFloat(path, "Camera", "AutoFollow", 80.0f) * kDeg;

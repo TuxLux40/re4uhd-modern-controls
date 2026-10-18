@@ -15,13 +15,14 @@ struct Config {
     bool centerDot = true;      // a small dot in the middle of the screen outside of aiming too (with CenteredAim)
     bool centeredAim = true;
     bool keepViewOnAim = true;   // raising the gun keeps the view's direction (remake style) instead of looking where Leon looks    // while aiming the camera looks where the laser points: crosshair in the centre
-    float aimShoulderRight = 450.0f;   // aim camera: sideways from Leon's centre (game units, + = right)
-    float aimShoulderBack = 1100.0f;   // behind the shoulder spot along the view
+    float aimShoulderRight = 400.0f;   // aim camera: sideways from Leon's centre (game units, + = right)
+    float aimShoulderBack = 750.0f;    // behind the shoulder spot along the view
     float aimShoulderHeight = 1550.0f; // shoulder spot above Leon's feet
     bool protectAshley = true;  // Leon's guns and knife don't damage Ashley
     // [Camera]
     float defaultPitch = 0.0f;  // radians, + = looks further down than the game's camera (ini: degrees)
     float height = 0.0f;        // raises the camera, game units
+    float distance = 0.6f;      // free camera's distance to Leon, share of the original
     float shoulder = 300.0f;    // moves the free camera to the right (game units), over Leon's shoulder
     float yawSpeed = 3.0f;      // radians per second at full deflection
     float pitchSpeed = 1.8f;

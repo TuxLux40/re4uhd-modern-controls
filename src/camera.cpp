@@ -398,6 +398,15 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
             const float rx = -cosf(g_yaw), rz = sinf(g_yaw);
             eye[0] += rx * cfg.shoulder, eye[2] += rz * cfg.shoulder;
             tgt[0] += rx * cfg.shoulder, tgt[2] += rz * cfg.shoulder;
+            // Closer (Distance = share of the original distance to Leon): forward along the view.
+            float f[3] = {tgt[0] - eye[0], tgt[1] - eye[1], tgt[2] - eye[2]};
+            const float fl = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+            if (fl > 1.0f && cfg.distance < 1.0f) {
+                for (int i = 0; i < 3; ++i) f[i] /= fl;
+                const float toLeon = (pos[0] - eye[0]) * f[0] + (pos[2] - eye[2]) * f[2];
+                if (toLeon > 0.0f)
+                    for (int i = 0; i < 3; ++i) eye[i] += f[i] * toLeon * (1.0f - cfg.distance);
+            }
         }
         // Looking up must not put the camera into the floor.
         const float minEye = pos[1] + 250.0f;
@@ -479,8 +488,11 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
         // The aim moved: sideways the aim's offset from Leon's heading (cPlayer+0x448, the gun turns about 0.85 rad per
         // unit), up and down the game's own changes to the aim (the sway anchor, radians). Leon's heading itself is in
         // the view's yaw already.
-        g_relYaw = WrapPi(g_relYaw + (side - g_lastSide) * 0.85f);
-        g_relPitch = Clamp(g_relPitch + TakeAimPitchMove(), -1.2f, 1.2f);
+        // The game resets both when the aim starts: a jump no stick makes in one frame is ignored (it turned the view
+        // by up to 140 deg).
+        const float ds = side - g_lastSide, dp = TakeAimPitchMove();
+        if (fabsf(ds) < 0.1f) g_relYaw = WrapPi(g_relYaw + ds * 0.85f);
+        if (fabsf(dp) < 0.1f) g_relPitch = Clamp(g_relPitch + dp, -1.2f, 1.2f);
     }
     g_lastSide = side;
     g_aimTime += dt;
