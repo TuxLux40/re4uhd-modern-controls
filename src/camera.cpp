@@ -40,6 +40,7 @@ static volatile float g_stickRx = 0.0f, g_stickRy = 0.0f;  // right stick, -1..1
 static volatile float g_moveYaw = 0.0f;                     // world yaw Leon should face
 static volatile float g_moveMag = 0.0f;                     // left stick deflection 0..1
 static volatile bool g_moving = false;
+static volatile bool g_reloadHold = false;  // a reload keeps Leon moving (camera.cpp, the hook below)
 static volatile float g_aimMoveX = 0.0f, g_aimMoveY = 0.0f;  // left stick while aiming (aim walk)
 
 // Camera state (game thread).
@@ -96,7 +97,7 @@ void FreeCameraPad(XGamepad& pad) {
     g_stickRx = DeadZone(pad.sThumbRX / 32767.0f, 0.2f) * (c.invertX ? -1.0f : 1.0f);
     g_stickRy = DeadZone(pad.sThumbRY / 32767.0f, 0.2f) * (c.invertY ? -1.0f : 1.0f);
     g_aimMoveX = g_aimMoveY = 0.0f;
-    if (AimActive() || (FreeCameraActive() && Aiming())) {
+    if (AimActive() || (FreeCameraActive() && Aiming()) || g_reloadHold) {
         g_moving = false;
         if (c.aimWalk) {
             const float ax = pad.sThumbLX / 32767.0f, ay = pad.sThumbLY / 32767.0f;
@@ -266,7 +267,9 @@ static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
         // The reload outlasts our fake aim by a few frames (Leon is still in his aim routine, r_no_1 6): the game's aim
         // camera must not show through then either.
         const bool stance = At<uint8_t>(pl, pl::RNo0) == 0 && At<uint8_t>(pl, pl::RNo0 + 1) == 6;
-        s_hold = QuickReload() || (s_hold && stance && !Aiming());
+        const bool reloading = stance && At<uint8_t>(pl, pl::RNo0 + 2) == 4;  // r_no_2 4: the reload animation
+        s_hold = QuickReload() || (s_hold && stance && !Aiming()) || (reloading && !Aiming());
+        g_reloadHold = s_hold;
         if (!s_hold || !s_have) {
             if (!Aiming()) {
                 for (int i = 0; i < 3; ++i) s_eye[i] = eye[i], s_tgt[i] = tgt[i], s_pos[i] = lp[i];
