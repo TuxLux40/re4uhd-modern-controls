@@ -282,6 +282,16 @@ static void __cdecl HookSway(uintptr_t pl, uint32_t mode, float* v, float* side)
     float a = fmaxf(-1.5707963f, fminf(1.5707963f, before + g_pitchNudge));
     g_pitchNudge = 0.0f;
     *(float*)(sw + 0x28) = a;
+    {
+        static int s_n = 0;
+        static DWORD s_t = 0;
+        const DWORD t = GetTickCount();
+        if (s_n < 300 && t - s_t >= 250) {
+            s_t = t, ++s_n;
+            Log("sway: mode %u anchor before %.4f (mod left %.4f) -> %.4f, v out %.3f", mode, before, g_anchorAfter, a,
+                a * 0.63661977f);
+        }
+    }
     g_anchorAfter = a, g_haveAnchor = true;
     *v = a * 0.63661977f, *side = At<float>(sw, 0x2C);  // back to the anchor: no drift, no kick
     g_swayOn = true;

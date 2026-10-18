@@ -502,15 +502,27 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     // being pulled against. Until the gun is in, the reticle holds its dot inside the ticks (shot.cpp turns the laser and
     // bullets to match).
     const float dy = WrapPi(wantRel - g_relYaw), dpi = wantPitch - g_relPitch;
+    const float viewYaw = leonYaw + g_relYaw;  // this frame's view, before the pull below changes Leon and g_relYaw
+    float k = 0.0f;
     if (!RecentShot(300)) {
-        const float k = 1.0f - expf(-dt / 0.12f);
+        k = 1.0f - expf(-dt / 0.12f);
         float* ang = (float*)(pl + pl::Ang);
         ang[1] = WrapPi(ang[1] - dy * k);
-        g_relYaw = WrapPi(g_relYaw + dy * k);  // this frame's view still uses the old heading: same direction
+        g_relYaw = WrapPi(g_relYaw + dy * k);  // next frame: the new heading plus this, the same direction
         NudgeAimPitch(-dpi * k);
     }
     SetGunOffset(dy, dpi);
-    const float yaw = leonYaw + g_relYaw, cp = cosf(g_relPitch);
+    {
+        static int s_n = 0;
+        static DWORD s_t = 0;
+        const DWORD t = GetTickCount();
+        if (s_n < 300 && t - s_t >= 250) {
+            s_t = t, ++s_n;
+            Log("pull: off yaw %.2f pitch %.2f deg | leon %.2f side %.3f aimV %.3f pose %.3f | k %.2f", dy * 57.3f,
+                dpi * 57.3f, leonYaw * 57.3f, side, *(float*)Va(kAimV), *(float*)Va(kAimVStart), k);
+        }
+    }
+    const float yaw = viewYaw, cp = cosf(g_relPitch);
     tgt[0] = eye[0] + cp * sinf(yaw) * dist;
     tgt[1] = eye[1] + sinf(g_relPitch) * dist;
     tgt[2] = eye[2] + cp * cosf(yaw) * dist;
