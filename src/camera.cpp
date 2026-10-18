@@ -428,18 +428,23 @@ void InitShotHook();
 void SetAimCentered();
 float TakeAimPitchMove();
 void SetAimPitch(float rad);
+bool CastFocus(const float* eye, const float* dir, float minDist, float* out);
 
-// Centered aim: raising the gun swings the view to where Leon looks (his heading, level) over kSwing, while the camera
-// glides from the free camera's spot to the game's over-the-shoulder spot. KeepViewOnAim=1 keeps the view's direction
-// instead (remake style) and swings Leon's aim to it. From then on the view follows Leon's aim (heading, the stick's
-// sideways and vertical aim), never the gun itself: recoil and breathing don't move it. The laser and the shots go to
-// the middle of it (shot.cpp).
+// Centered aim, like the remakes: raising the gun keeps what was in the middle of the screen in the middle. The camera
+// glides over kSwing from the free camera's spot to the game's over-the-shoulder spot, turning just enough to keep
+// that point (the first thing under the middle, at least kMinFocus away) centred, and Leon swings his aim to it.
+// KeepViewOnAim=0 swings the view to where Leon looks (level) instead. From then on the view follows Leon's aim
+// (heading, the stick's sideways and vertical aim), never the gun itself: recoil and breathing don't move it. The laser
+// and the shots go to the middle of it (shot.cpp).
 bool g_aimLocked = false;
-static const float kSwing = 0.35f;
+static const float kSwing = 0.4f, kMinFocus = 1000.0f;
 static float g_aimTime = 0.0f;
 static float g_relYaw = 0.0f, g_relPitch = 0.0f;  // view direction: yaw relative to Leon's, pitch
 static float g_lastSide = 0.0f;                     // the aim's sideways offset, last frame
 static float g_freeEye[3] = {}, g_freeDir[3] = {};  // the free camera when the aim started
+static float g_focus[3] = {};                       // the point kept in the middle while the camera glides
+static float g_startLeonYaw = 0.0f;
+static float g_glideYaw = 0.0f, g_glidePitch = 0.0f;  // aiming done during the glide
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const uintptr_t pl = Player();
@@ -449,40 +454,56 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     float cur[3] = {tgt[0] - eye[0], tgt[1] - eye[1], tgt[2] - eye[2]};
     const float dist = sqrtf(cur[0] * cur[0] + cur[1] * cur[1] + cur[2] * cur[2]);
     if (dist < 1.0f) return;
+    const bool keep = Cfg().keepViewOnAim;
     if (start || !g_aimLocked) {
-        // The view on screen (Camera_60, last frame's: the free camera) is where the swing starts.
+        // The view on screen (Camera_60, last frame's: the free camera) is where the glide starts.
         const float* m = (const float*)(Va(kCamCtrl) + cc::Camera);
         float shown[3] = {-m[2], -m[6], -m[10]};
         const float sl = sqrtf(shown[0] * shown[0] + shown[1] * shown[1] + shown[2] * shown[2]);
         if (sl < 0.5f) return;
         for (int i = 0; i < 3; ++i) g_freeDir[i] = shown[i] / sl;
         g_freeEye[0] = m[3], g_freeEye[1] = m[7], g_freeEye[2] = m[11];
-        if (Cfg().keepViewOnAim) {
-            g_relYaw = WrapPi(atan2f(g_freeDir[0], g_freeDir[2]) - leonYaw);
-            g_relPitch = atan2f(g_freeDir[1], sqrtf(g_freeDir[0] * g_freeDir[0] + g_freeDir[2] * g_freeDir[2]));
-        } else {
-            g_relYaw = 0.0f, g_relPitch = 0.0f;
-        }
+        CastFocus(g_freeEye, g_freeDir, kMinFocus, g_focus);
+        g_startLeonYaw = leonYaw;
+        g_glideYaw = g_glidePitch = 0.0f;
         g_aimTime = 0.0f;
         g_aimLocked = true;
-        SetAimPitch(g_relPitch);
-        Log("cam: aim start, view yaw %.1f (leon %+.1f) pitch %.1f", (leonYaw + g_relYaw) * 57.3f, g_relYaw * 57.3f,
-            g_relPitch * 57.3f);
+        // Leon's vertical aim: toward the point, seen from about his shoulder (the camera's end spot).
+        float pitch = 0.0f;
+        if (keep) {
+            const float v[3] = {g_focus[0] - eye[0], g_focus[1] - eye[1], g_focus[2] - eye[2]};
+            pitch = atan2f(v[1], sqrtf(v[0] * v[0] + v[2] * v[2]));
+        }
+        SetAimPitch(pitch);
+        Log("cam: aim start, focus %.0f away, pitch %.1f", sqrtf((g_focus[0] - g_freeEye[0]) * (g_focus[0] - g_freeEye[0]) +
+            (g_focus[2] - g_freeEye[2]) * (g_focus[2] - g_freeEye[2])), pitch * 57.3f);
     } else {
-        // Follow the aim: sideways the aim's offset from Leon's heading (cPlayer+0x448, the gun turns about 0.85 rad
-        // per unit), up and down the game's own changes to the aim (the sway anchor, radians). Leon's heading itself is
-        // in the view's yaw already.
-        g_relYaw = WrapPi(g_relYaw + (side - g_lastSide) * 0.85f);
-        g_relPitch += TakeAimPitchMove();
+        // The aim moved: sideways the aim's offset from Leon's heading (cPlayer+0x448, the gun turns about 0.85 rad per
+        // unit), up and down the game's own changes to the aim (the sway anchor, radians). Leon's heading itself is in
+        // the view's yaw already.
+        const float dyaw = (side - g_lastSide) * 0.85f, dpitch = TakeAimPitchMove();
+        g_relYaw = WrapPi(g_relYaw + dyaw), g_relPitch += dpitch;
+        g_glideYaw += dyaw, g_glidePitch += dpitch;
     }
     g_lastSide = side;
     g_aimTime += dt;
     const float t = g_aimTime / kSwing < 1.0f ? g_aimTime / kSwing : 1.0f, b = t * t * (3.0f - 2.0f * t);
-    // The camera's spot: from the free camera's to the shoulder. Its direction: from the free camera's to the aim's.
     for (int i = 0; i < 3; ++i) eye[i] = g_freeEye[i] + (eye[i] - g_freeEye[i]) * b;
+    if (t < 1.0f) {
+        // Gliding: the aim direction is the point's (or Leon's look, level), plus any aiming done meanwhile.
+        float yaw, pitch;
+        if (keep) {
+            const float v[3] = {g_focus[0] - eye[0], g_focus[1] - eye[1], g_focus[2] - eye[2]};
+            yaw = atan2f(v[0], v[2]) + WrapPi(leonYaw - g_startLeonYaw);
+            pitch = atan2f(v[1], sqrtf(v[0] * v[0] + v[2] * v[2]));
+        } else {
+            yaw = leonYaw, pitch = 0.0f;
+        }
+        g_relYaw = WrapPi(yaw + g_glideYaw - leonYaw), g_relPitch = pitch + g_glidePitch;
+    }
     const float yaw = leonYaw + g_relYaw, cp = cosf(g_relPitch);
     float d[3] = {cp * sinf(yaw), sinf(g_relPitch), cp * cosf(yaw)};
-    if (b < 1.0f) {
+    if (!keep && b < 1.0f) {  // from the free camera's direction to Leon's look
         float l = 0.0f;
         for (int i = 0; i < 3; ++i) d[i] = g_freeDir[i] + (d[i] - g_freeDir[i]) * b, l += d[i] * d[i];
         l = sqrtf(l);

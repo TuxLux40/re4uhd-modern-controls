@@ -50,7 +50,7 @@ void LoadConfig() {
     c.crosshair = ReadFloat(path, "Aim", "Crosshair", 1.0f) != 0.0f;
     c.centeredAim = ReadFloat(path, "Aim", "CenteredAim", 1.0f) != 0.0f;
     c.centerDot = ReadFloat(path, "Aim", "CenterDot", 1.0f) != 0.0f;
-    c.keepViewOnAim = ReadFloat(path, "Aim", "KeepViewOnAim", 0.0f) != 0.0f;
+    c.keepViewOnAim = ReadFloat(path, "Aim", "KeepViewOnAim", 1.0f) != 0.0f;
     c.protectAshley = ReadFloat(path, "Aim", "ProtectAshley", 1.0f) != 0.0f;
     c.defaultPitch = ReadFloat(path, "Camera", "DefaultPitch", 12.0f) * kDeg;
     c.height = ReadFloat(path, "Camera", "Height", 0.0f);

@@ -151,6 +151,22 @@ static void Scatter(float* dir, float r) {
     FromYawPitch(yaw + d * cosf(a) / (c > 0.2f ? c : 0.2f), pitch + d * sinf(a), dir);
 }
 
+// For the camera: the first thing (world or enemy) along a ray, at least `minDist` away (nearer hits are pushed out to
+// it, so a wall right in front doesn't swing the view around).
+bool CastFocus(const float* eye, const float* dir, float minDist, float* out) {
+    float from[3], to[3];
+    for (int i = 0; i < 3; ++i) from[i] = eye[i] + dir[i] * 50.0f, to[i] = eye[i] + dir[i] * 40000.0f;
+    if (g_lineHit) {
+        int em = 0, poly = 0;
+        g_lineHit(from, to, 0, 0, &em, &poly);
+    }
+    float d[3] = {to[0] - eye[0], to[1] - eye[1], to[2] - eye[2]};
+    const float l = sqrtf(Dot(d, d));
+    const float k = l < minDist ? minDist : l;
+    for (int i = 0; i < 3; ++i) out[i] = eye[i] + dir[i] * k;
+    return true;
+}
+
 // The gun's own line, from the muzzle to its first hit (for the camera's log).
 bool GunLine(float* start, float* hit) {
     if (GetTickCount() - g_gunTick > 100) return false;
