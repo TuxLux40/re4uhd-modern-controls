@@ -13,12 +13,10 @@ No more tank controls: move where you push the stick, look around freely, walk w
 
 </div>
 
-> [!WARNING]
-> **Beta branch.** This is the work in progress on the RE5-style shoulder camera and the remake-style crosshair. It
-> changes often and can feel rough. Download it from the
-> [**beta pre-release**](https://github.com/TuxLux40/re4uhd-modern-controls/releases/tag/beta), which is rebuilt on
-> every change to this branch. For the stable version, see the
-> [main branch](https://github.com/TuxLux40/re4uhd-modern-controls/tree/main).
+> [!NOTE]
+> **Early version.** Everything below works, but expect rough edges. See [Planned](#planned) and
+> [Known issues](#known-issues). Work on leg animations and fading characters happens on the
+> [beta branch](https://github.com/TuxLux40/re4uhd-modern-controls/tree/beta).
 
 ## Features
 
@@ -35,9 +33,8 @@ No more tank controls: move where you push the stick, look around freely, walk w
 
 ## Install
 
-1. **Download** `RE4ModernControls-v0.0.0-beta.<commit>.zip` from the
-   [**beta pre-release**](https://github.com/TuxLux40/re4uhd-modern-controls/releases/tag/beta) and extract it
-   anywhere.
+1. **Download** the latest zip from the
+   [**Releases**](https://github.com/TuxLux40/re4uhd-modern-controls/releases) page and extract it anywhere.
 2. **Run the installer**
 
    | Windows | Linux / Steam Deck (Desktop Mode) |
@@ -170,11 +167,11 @@ either way, so this table can grow.
 
 ## Known issues
 
-- Beta: the shoulder distances (`ShoulderRight`, `ShoulderBack`, `ShoulderHeight`, `Shoulder`) are first guesses;
+- The shoulder distances (`ShoulderRight`, `ShoulderBack`, `ShoulderHeight`, `Shoulder`) are first guesses;
   they can be changed in the ini while the game runs.
-- Beta: Leon's gun doesn't always point exactly at the reticle, so the laser leaves the gun at a slight angle. Shots
+- Leon's gun doesn't always point exactly at the reticle, so the laser leaves the gun at a slight angle. Shots
   still go to the reticle.
-- Beta: reloading and firing from the hip stop Leon in place; walking through them needs its own leg animation.
+- Reloading and firing from the hip: Leon keeps moving but glides, his legs stand still (they need their own animation).
 - Walking while aiming follows slopes and stops at walls; Ashley is kept on the ground behind you.
 
 Found a bug? [Open an issue](https://github.com/TuxLux40/re4uhd-modern-controls/issues), and attach
