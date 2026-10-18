@@ -96,6 +96,10 @@ constexpr uint8_t kSigLineHit[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x6C, 0xA1};
 constexpr uint32_t kFnPartnerHit = 0x0035EDF0;
 constexpr uint8_t kSigPartnerHit[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x20, 0xA1};
 
+// cModel draw, cdecl(cModel*): returns early when +0x158 * +0x154 is 0, else the alpha of every part is scaled by it.
+constexpr uint32_t kFnModelDraw = 0x002EB450;
+constexpr uint8_t kSigModelDraw[] = {0x55, 0x8B, 0xEC, 0x56, 0x8B, 0x75, 0x08, 0xD9, 0x86, 0x58, 0x01, 0x00, 0x00};
+
 // KEY_BTN bits (re4_tweaks SDK/pad.h)
 constexpr uint64_t KEY_KAMAE = 0x10;         // aim (weapon ready)
 constexpr uint64_t KEY_KAMAE_KNIFE = 0x800;  // knife ready

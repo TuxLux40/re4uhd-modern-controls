@@ -30,6 +30,7 @@ No more tank controls: move where you push the stick, look around freely, walk w
 | ➕ **Remake-style crosshair** | A reticle in the middle of the screen, and your shots and the laser go there. The camera follows your aim, never the gun, so recoil doesn't shake the view. The original aim sway is gone. Instead the ticks open up while you walk, turn or fire and close again when you hold still, and shots land anywhere inside them. The laser is just a beam now, without its red dot. `CenteredAim=0` brings back the original camera, sway and laser, with the reticle following the laser. |
 | 🔴 **Target indicator** | The centre dot turns red and grows while it rests on something that takes damage (enemies, lamps, barrels). Outside of aiming a small dot marks the middle of the screen (`CenterDot=0` hides it). |
 | 🛡️ **Ashley is safe from your shots** | With the camera free, it's easy to catch her in the crossfire. Your guns and knife no longer hurt her, the way her armour costume protects her; enemies and explosions still do. Can be switched off. |
+| 👻 **Fade when the camera is close** | Leon and Ashley turn see-through when the camera gets close to them (Ashley right behind Leon, a wall at your back), in two steps so the model never pops out entirely. `Fade`, `FadeNear`, `FadeFar` and `FadeMin` in `[Camera]` tune it. Enemies are never affected. |
 
 ## Install
 
@@ -160,7 +161,6 @@ either way, so this table can grow.
 
 - [ ] In-game settings page: run by default, free or classic camera, modern or tank controls
 - [ ] Leon's gun pointing exactly at the reticle (the laser bends toward it for now)
-- [ ] Leon and Ashley fade out when the camera gets very close (Ashley ducking behind Leon)
 - [ ] Remake-style weapon quick select on the d-pad
 - [ ] Reload and fire from the hip on the move, like the remake (Leon stops for now): the legs play the normal walk (not the run) under the upper body's reload or shot, as RE3Controls does for RE5; and quick turn in the RE3 (2020) style
 - [ ] Support for other game builds by finding the game's code instead of relying on fixed addresses

@@ -36,6 +36,11 @@ struct Config {
     float autoFollowDelay = 1.0f;  // seconds without right-stick input before it starts
     bool invertX = false;
     bool invertY = false;
+    // [Camera] characters fade out when the camera gets close (distance eye to body, game units)
+    bool fade = true;
+    float fadeNear = 350.0f;  // below this: the most see-through step
+    float fadeFar = 800.0f;   // above this: fully visible; in between: one step halfway
+    float fadeMin = 0.3f;     // visibility of the most see-through step (never fully hidden)
 };
 
 const Config& Cfg();

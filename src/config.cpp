@@ -75,6 +75,13 @@ void LoadConfig() {
     c.autoFollowDelay = ReadFloat(path, "Camera", "AutoFollowDelay", 1.0f);
     c.invertX = ReadFloat(path, "Camera", "InvertX", 0.0f) != 0.0f;
     c.invertY = ReadFloat(path, "Camera", "InvertY", 0.0f) != 0.0f;
+    c.fade = ReadFloat(path, "Camera", "Fade", 1.0f) != 0.0f;
+    c.fadeNear = ReadFloat(path, "Camera", "FadeNear", 350.0f);
+    c.fadeFar = ReadFloat(path, "Camera", "FadeFar", 800.0f);
+    c.fadeMin = ReadFloat(path, "Camera", "FadeMin", 0.3f);
+    if (c.fadeMin < 0.0f) c.fadeMin = 0.0f;
+    if (c.fadeMin > 1.0f) c.fadeMin = 1.0f;
+    if (c.fadeFar < c.fadeNear + 1.0f) c.fadeFar = c.fadeNear + 1.0f;
     g_cfg = c;
     Log("config: aim walk %d speed %.0f crosshair %d centered %d protect ashley %d", c.aimWalk, c.aimWalkSpeed,
         c.crosshair, c.centeredAim, c.protectAshley);

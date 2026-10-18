@@ -245,7 +245,7 @@ bool GunLine(float* start, float* hit);
 typedef void(__fastcall* PFN_QfpsMove)(uintptr_t self, void* edx);
 static PFN_QfpsMove g_origQfpsMove = nullptr;
 
-static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
+static void __fastcall HookQfpsMoveBody(uintptr_t self, void* edx) {
     g_origQfpsMove(self, edx);
     g_view = VIEW_NONE;
     const uintptr_t pl = Player();
@@ -602,6 +602,78 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     SetAimCentered();
 }
 
+// Fade: Leon and Ashley turn see-through as the camera closes in (the remakes' behaviour). The game's model draw
+// multiplies the alpha by cModel +0x154 * +0x158; +0x154 is the game's own fade, +0x158 is 1.0 unless set.
+static float g_fadeEye[3];
+static float g_fade[2] = {1.0f, 1.0f};  // current factor: Leon, Ashley
+static int g_level[2] = {2, 2};  // 0 most see-through .. 2 visible
+static DWORD g_fadeTick = 0;
+
+static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {
+    HookQfpsMoveBody(self, edx);
+    if (g_view != VIEW_NONE) memcpy(g_fadeEye, (float*)(self + cc::CameraPoint), sizeof(g_fadeEye));
+}
+
+static float BodyDistance(uintptr_t ch) {
+    const float* p = (const float*)(ch + pl::Pos);
+    // Closest point of the body (a vertical line from the feet to the head) to the eye.
+    const float y = Clamp(g_fadeEye[1] - p[1], 0.0f, 1700.0f);
+    const float dx = g_fadeEye[0] - p[0], dy = g_fadeEye[1] - p[1] - y, dz = g_fadeEye[2] - p[2];
+    return sqrtf(dx * dx + dy * dy + dz * dz);
+}
+
+// cModel draw (0x006EB450, cdecl(cModel*)). The factor is only in place for the draw of Leon and Ashley: several enemy
+// update routines copy +0x154/+0x158 from the model they are linked to, so a value left in the model would fade those
+// enemies too.
+typedef void(__cdecl* PFN_ModelDraw)(uintptr_t model);
+static PFN_ModelDraw g_origModelDraw = nullptr;
+
+static void __cdecl HookModelDraw(uintptr_t model) {
+    int who = -1;
+    if (g_fade[0] != 1.0f || g_fade[1] != 1.0f) {
+        if (model == Player()) who = 0;
+        else if (model == Character(kAshleyPtr)) who = 1;
+    }
+    if (who < 0) return g_origModelDraw(model);
+    float& f = At<float>(model, 0x158);
+    const float saved = f;
+    f = saved * g_fade[who];
+    g_origModelDraw(model);
+    f = saved;
+}
+
+static void FadeTick() {
+    const DWORD now = GetTickCount();
+    const float dt = Clamp((now - g_fadeTick) / 1000.0f, 0.0f, 0.1f);
+    g_fadeTick = now;
+    const bool on = Cfg().fade && GameplayView();
+    uintptr_t ch[2] = {Player(), Character(kAshleyPtr)};
+    for (int i = 0; i < 2; ++i) {
+        if (!ch[i]) continue;
+        // Steps instead of a continuous ramp: a half see-through model shows its own overlapping parts, so it rests on
+        // a few fixed levels. Going up needs a margin past the edge so it doesn't flicker. Never fully hidden.
+        const Config& c = Cfg();
+        const float span = c.fadeFar - c.fadeNear, d = BodyDistance(ch[i]);
+        const auto level = [&](float dist) {
+            const float t = (dist - c.fadeNear) / span;
+            return t < 0.5f ? 0 : t < 1.0f ? 1 : 2;
+        };
+        if (!on) g_level[i] = 2;
+        else {
+            const int down = level(d), up = level(d - 0.08f * span);
+            if (down < g_level[i]) g_level[i] = down;
+            else if (up > g_level[i]) g_level[i] = up;
+        }
+        const float lv[3] = {c.fadeMin, 0.5f * (1.0f + c.fadeMin), 1.0f};
+        const float want = lv[g_level[i]];
+        g_fade[i] += (want - g_fade[i]) * (1.0f - expf(-dt / 0.12f));  // ~0.35 s from one step to the next
+        if (fabsf(want - g_fade[i]) < 0.01f) g_fade[i] = want;
+    }
+    const bool dirty = g_fade[0] != 1.0f || g_fade[1] != 1.0f;
+    static DWORD s_log = 0;
+    if (dirty && now - s_log > 500) s_log = now, Log("fade leon %.2f ashley %.2f", g_fade[0], g_fade[1]);
+}
+
 // Ashley: drop a hit from Leon's guns or knife before the game applies it. The attack types are exactly the ones her
 // armour costume shrugs off (the game's own list, in the partner hit routine).
 typedef void(__fastcall* PFN_PartnerHit)(uintptr_t self, void* edx);
@@ -634,6 +706,7 @@ static PFN_KeyConvert g_origKeyConvert = nullptr;
 
 static void __cdecl HookKeyConvert() {
     g_origKeyConvert();
+    FadeTick();
     if (!g_moving || !FreeCameraActive()) return;
     uint64_t& keys = *(uint64_t*)Va(kKeyBtnOn);
     const Config& c = Cfg();
@@ -672,6 +745,8 @@ bool InitCameraHooks() {
                           (void**)&g_origQfpsMove, "CameraQuasiFPS::move");
     Hook(kFnKeyConvert, kSigKeyConvert, sizeof(kSigKeyConvert), (void*)HookKeyConvert, (void**)&g_origKeyConvert,
          "KeyConvert");
+    Hook(kFnModelDraw, kSigModelDraw, sizeof(kSigModelDraw), (void*)HookModelDraw, (void**)&g_origModelDraw,
+         "cModel draw");
     InitShotHook();
     Hook(kFnPartnerHit, kSigPartnerHit, sizeof(kSigPartnerHit), (void*)HookPartnerHit, (void**)&g_origPartnerHit,
          "partner hit");
