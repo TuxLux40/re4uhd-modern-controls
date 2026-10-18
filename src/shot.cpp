@@ -1,14 +1,14 @@
-// Shots go where the crosshair is, inside a remake-style spread. With the centered aim the camera follows the gun
-// (camera.cpp) and the crosshair sits in the middle of the screen. Hooks:
-//  - Aim sway (re4.h kFnSway): the game's sway (drift while the stick rests, a kick per shot) would swing the gun and
-//    with it the whole view. The game gets the steady aim back; the sway is dropped.
-//  - Laser line (kFnLaserLine): the laser runs from the muzzle to the point under the crosshair. Its red dot is not
-//    spawned (kFnLaserDot): the reticle's own dot marks the aim.
-//  - Bullet (kFnBullet): each of Leon's shots is turned from the gun's line to a random point inside the current
-//    spread around the crosshair (on top of the gun's own spread, e.g. the shotgun's).
+// Shots and the laser follow the gun, inside a remake-style spread. With the centered aim the camera follows Leon's
+// steady aim (camera.cpp) and the crosshair marks the gun's line: it wobbles a little around the middle of the screen
+// with his breathing and the recoil, instead of the whole view. Hooks:
+//  - Aim sway (re4.h kFnSway): the game's sway (drift while the stick rests, a kick per shot) is dropped; the game gets
+//    the steady aim back.
+//  - Laser line (kFnLaserLine): records the gun's line for the crosshair. The laser's red dot is not spawned
+//    (kFnLaserDot): the reticle's own dot marks the aim.
+//  - Bullet (kFnBullet): each of Leon's shots is turned to a random point inside the current spread around its line
+//    (on top of the gun's own spread, e.g. the shotgun's).
 // The spread works like the remakes': it opens while Leon walks, turns or fires and closes again while he holds still;
-// the reticle's ticks show it. The point under the crosshair is the camera's centre line cut by the game's line hit
-// test (world and enemies).
+// the reticle's ticks show it.
 #include "common.h"
 #include "re4.h"
 #include "config.h"
@@ -26,9 +26,7 @@ static PFN_Bullet g_origBullet = nullptr;
 static PFN_LaserLine g_origLaserLine = nullptr;
 static PFN_LineHit g_lineHit = nullptr;
 
-static float g_viewEye[3], g_viewDir[3];
-static float g_viewGunYaw = 0.0f, g_viewGunPitch = 0.0f;  // the gun's line the camera followed for that view
-static bool g_viewHasGun = false;
+static float g_viewDir[3];
 static volatile DWORD g_viewTick = 0;
 static bool g_swayOn = false;  // the sway hook is holding the gun steady
 static float g_spread = 0.0f;  // radians around the crosshair the next shot may go
@@ -40,10 +38,8 @@ extern "C" {
 volatile int g_hideLaserDot = 0;
 void* g_origLaserDot = nullptr;
 }
-static float g_gunStart[3], g_gunEnd[3], g_gunHit[3];  // the gun's line before the laser is turned, and its first hit
+static float g_gunStart[3], g_gunEnd[3], g_gunHit[3];  // the laser (the gun's line) and its first hit
 static volatile DWORD g_gunTick = 0;
-static float g_target[3];  // the point under the crosshair
-static volatile DWORD g_targetTick = 0;
 
 static float Dot(const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 static float Normalize(float* v) {
@@ -64,12 +60,6 @@ static float WrapAngle(float a) {
     while (a < -3.14159265f) a += 6.2831853f;
     return a;
 }
-static bool GunFresh() { return GetTickCount() - g_gunTick <= 100; }
-static void GunYawPitch(float* yaw, float* pitch) {
-    float d[3] = {g_gunEnd[0] - g_gunStart[0], g_gunEnd[1] - g_gunStart[1], g_gunEnd[2] - g_gunStart[2]};
-    YawPitch(d, yaw, pitch);
-}
-
 // The widest spread of the weapon in hand (radians): half of its sway limit (TMP 0.122 -> 3.5 deg).
 static float SpreadMax() {
     const float r = *(const float*)Va(kSwayMax);
@@ -116,15 +106,12 @@ static void KickSpread() {
     g_spread = fminf(max, g_spread + max * 0.3f);
 }
 
-// The aim camera as shown this frame (set by the camera hook while the centered aim runs; the game's camera smoothing
-// is cut then, so this is the rendered view).
+// The aim camera as shown this frame (set by the camera hook while the centered aim runs): its turn opens the spread.
 void SetShotView(const float* eye, const float* tgt) {
     const float d[3] = {tgt[0] - eye[0], tgt[1] - eye[1], tgt[2] - eye[2]};
     const float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
     if (l < 1.0f) return;
-    for (int i = 0; i < 3; ++i) g_viewEye[i] = eye[i], g_viewDir[i] = d[i] / l;
-    g_viewHasGun = GunFresh();
-    if (g_viewHasGun) GunYawPitch(&g_viewGunYaw, &g_viewGunPitch);
+    for (int i = 0; i < 3; ++i) g_viewDir[i] = d[i] / l;
     const DWORD now = GetTickCount();
     const bool fresh = now - g_viewTick > 200;  // a new aim
     g_viewTick = now;
@@ -156,48 +143,6 @@ bool GunLine(float* start, float* hit) {
     return true;
 }
 
-// Cast the camera's centre line, starting level with the muzzle so nothing between the camera and Leon counts. The
-// laser runs before the camera in a frame, so the view is last frame's: it is turned by however far the gun's line moved
-// since, which is where this frame's camera (following the gun) will look.
-static bool CastTarget(const float* muzzle) {
-    if (!g_lineHit || !Cfg().centeredAim || !AimCentered() || GetTickCount() - g_viewTick > 100) return false;
-    float eye[3] = {g_viewEye[0], g_viewEye[1], g_viewEye[2]}, dir[3] = {g_viewDir[0], g_viewDir[1], g_viewDir[2]};
-    if (g_viewHasGun && GunFresh()) {
-        float gy, gp, vy, vp;
-        GunYawPitch(&gy, &gp);
-        YawPitch(dir, &vy, &vp);
-        FromYawPitch(vy + WrapAngle(gy - g_viewGunYaw), vp + (gp - g_viewGunPitch), dir);
-    }
-    const float m[3] = {muzzle[0] - eye[0], muzzle[1] - eye[1], muzzle[2] - eye[2]};
-    const float t0 = fmaxf(0.0f, Dot(m, dir));
-    float from[3], to[3];
-    for (int i = 0; i < 3; ++i) from[i] = eye[i] + dir[i] * t0, to[i] = eye[i] + dir[i] * 40000.0f;
-    int em = 0, poly = 0;
-    g_lineHit(from, to, 0, 0, &em, &poly);
-    for (int i = 0; i < 3; ++i) g_target[i] = to[i];
-    g_targetTick = GetTickCount();
-    return true;
-}
-
-// Direction from `from` that hits the target, turned the way the gun's line would have to turn to get there.
-// Returns false (leave the shot alone) when there is no target or it is far off the gun's line.
-static bool Steer(const float* from, const float* shotDir, float* out, float* angle, float scatter) {
-    if (GetTickCount() - g_targetTick > 100) return false;
-    float want[3] = {g_target[0] - from[0], g_target[1] - from[1], g_target[2] - from[2]};
-    if (!Normalize(want)) return false;
-    Scatter(want, scatter);
-    float gun[3] = {g_gunEnd[0] - g_gunStart[0], g_gunEnd[1] - g_gunStart[1], g_gunEnd[2] - g_gunStart[2]};
-    // No fresh gun line (the laser skips some frames while firing): straight at the target, without the spread.
-    if (GetTickCount() - g_gunTick > 100 || !Normalize(gun))
-        for (int i = 0; i < 3; ++i) gun[i] = shotDir[i];
-    const float d = Dot(gun, want);
-    if (d < 0.5f) return false;  // target behind or beside the gun
-    for (int i = 0; i < 3; ++i) out[i] = shotDir[i] + want[i] - gun[i];
-    if (!Normalize(out)) return false;
-    *angle = acosf(fminf(1.0f, d)) * 57.29578f;
-    return true;
-}
-
 static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, float* end) {
     g_origLaserLine(self, edx, start, end);
     // Only the laser itself (LaserUpdate); the other callers use the line for their own checks.
@@ -209,49 +154,27 @@ static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, fl
     float s[3] = {start[0], start[1], start[2]};
     g_lineHit(s, g_gunHit, 0, 0, &em, &poly);
     g_gunTick = GetTickCount();
-
-    g_hideLaserDot = 0;
-    if (!CastTarget(start)) return;
-    g_hideLaserDot = 1;
-    float dir[3] = {end[0] - start[0], end[1] - start[1], end[2] - start[2]};
-    const float len = Normalize(dir);
-    float nd[3], angle = -1.0f;
-    const bool ok = len > 0.0f && Steer(start, dir, nd, &angle, 0.0f);
-    static int s_diag = 0;
-    static DWORD s_diagTick = 0;
-    const DWORD now = GetTickCount();
-    if (s_diag < 60 && now - s_diagTick >= 250) {
-        s_diagTick = now, ++s_diag;
-        Log("laser: %s %.2f deg, spread %.2f deg (max %.2f)", ok ? "turned" : "LEFT", angle, g_spread * 57.3f,
-            SpreadMax() * 57.3f);
-    }
-    if (!ok) return;
-    for (int i = 0; i < 3; ++i) end[i] = start[i] + nd[i] * len;
+    g_hideLaserDot = Cfg().centeredAim && AimCentered();
 }
 
 static void __cdecl HookBullet(uintptr_t owner, float* from, float* to, uint32_t wep, uint32_t a5, uint32_t a6) {
     static int logged = 0;
-    float nt[3];
-    if (owner && owner == *(uintptr_t*)Va(kPlayerPtr) && Readable(from, 12) && Readable(to, 12) && CastTarget(from)) {
-        float dir[3] = {to[0] - from[0], to[1] - from[1], to[2] - from[2]};
-        const float len = Normalize(dir);
-        float nd[3], angle;
+    if (owner && owner == *(uintptr_t*)Va(kPlayerPtr) && Cfg().centeredAim && AimCentered() &&
+        GetTickCount() - g_viewTick <= 100 && Readable(from, 12) && Readable(to, 12)) {
         const float scatter = g_spread;
         KickSpread();
-        if (len > 0.0f && Steer(from, dir, nd, &angle, scatter)) {
-            for (int i = 0; i < 3; ++i) nt[i] = from[i] + nd[i] * len;
+        float dir[3] = {to[0] - from[0], to[1] - from[1], to[2] - from[2]};
+        const float len = Normalize(dir);
+        if (len > 0.0f && scatter > 0.0f) {
+            Scatter(dir, scatter);
+            float nt[3];
+            for (int i = 0; i < 3; ++i) nt[i] = from[i] + dir[i] * len;
             if (logged < 5) {
                 ++logged;
-                Log("shot: weapon %u turned %.2f deg toward the crosshair, spread %.2f deg", wep & 0xFFFF, angle,
-                    scatter * 57.3f);
+                Log("shot: weapon %u, spread %.2f deg", wep & 0xFFFF, scatter * 57.3f);
             }
             g_origBullet(owner, from, nt, wep, a5, a6);  // a copy: the caller's buffer stays as it was
             return;
-        }
-        if (logged < 5) {
-            ++logged;
-            Log("shot: weapon %u left alone (target %s)", wep & 0xFFFF,
-                GetTickCount() - g_targetTick > 100 ? "stale" : "ok");
         }
     }
     g_origBullet(owner, from, to, wep, a5, a6);

@@ -59,7 +59,7 @@ static DWORD g_depthTick = 0;
 bool GunLine(float* start, float* hit);
 float SpreadRadius();
 static void AimPoint(float* out) {
-    // The gun's own line: with the centered aim the drawn laser is turned to the crosshair, which the camera follows.
+    // The gun's line as the laser shows it, cut at its first hit.
     float gs[3], ge[3];
     const float* s = (const float*)Va(kLaserStart);
     const float* e = (const float*)Va(kLaserEnd);
@@ -131,15 +131,14 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
 
     static float screenAspect = 16.0f / 9.0f;  // from the back buffer, below
     float nx = 0.0f, ny = 0.0f;
-    // With the camera following the aim, the aim point is the centre of the view.
-    if (!Cfg().crosshair || GetTickCount() - g_laserTick > 100 ||
-        (!AimCentered() && !ProjectLaserEnd(screenAspect, &nx, &ny))) {
+    if (!Cfg().crosshair || GetTickCount() - g_laserTick > 100 || !ProjectLaserEnd(screenAspect, &nx, &ny)) {
         visible = false;
         return;
     }
-    // RE4 sways the aim, so the laser end shakes. The reticle follows it smoothed (~60 ms): steady like the remakes',
-    // still on the average aim point. It snaps when the aim starts.
-    if (!visible) {
+    // Without the centered aim RE4 sways the aim, so the laser end shakes: the reticle follows it smoothed (~60 ms),
+    // steady like the remakes', still on the average aim point. With it the sway is gone and the reticle stays exactly on
+    // the laser (it shows the breathing and the recoil). It snaps when the aim starts.
+    if (!visible || AimCentered()) {
         sx = nx;
         sy = ny;
         visible = true;

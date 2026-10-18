@@ -427,22 +427,26 @@ void SetShotView(const float* eye, const float* tgt);
 void InitShotHook();
 void SetAimCentered();
 
-// Centered aim: turns the aim camera (eye kept) toward the laser's aim point, so the crosshair sits in the middle of
-// the screen and the laser and bullets go where it shows (the game's shots follow the gun's line, like the laser).
-// Blended in over 0.2 s when the aim starts.
-static float g_aimDir[3];
+// Centered aim: turns the aim camera (eye kept) to follow Leon's aim, so the crosshair sits in the middle of the screen.
+// Blended in over 0.2 s when the aim starts. Afterwards the camera follows his steady aim, not the gun itself: it turns
+// with Leon exactly, catches up with the gun at once while the aim moves (stick, or the game's aim values), and
+// otherwise drifts toward the gun only slowly. His breathing and the recoil move the crosshair, not the whole view.
 float g_aimFollow = 0.0f;
+static float g_relYaw = 0.0f, g_relPitch = 0.0f;  // camera direction: yaw relative to Leon's, pitch
+static float g_lastSide = 0.0f, g_lastV = 0.0f;
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     float p[3], laserYaw, pivotXZ[2];
     if (start) g_aimFollow = 0.0f;
-    if (!LaserAimPoint(p, &laserYaw, pivotXZ)) {
+    const uintptr_t pl = Player();
+    if (!pl || !LaserAimPoint(p, &laserYaw, pivotXZ)) {
         g_aimFollow = 0.0f;
         return;
     }
     // Turn the point with Leon by however far he turned since the laser was computed.
-    if (const uintptr_t pl = Player()) {
-        const float d = WrapPi(At<float>(pl, pl::Ang + 4) - laserYaw);
+    const float leonYaw = At<float>(pl, pl::Ang + 4);
+    {
+        const float d = WrapPi(leonYaw - laserYaw);
         const float pivot[3] = {pivotXZ[0], 0.0f, pivotXZ[1]};
         RotateYaw(p, pivot, cosf(d), sinf(d));
     }
@@ -452,16 +456,44 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const float wl = sqrtf(want[0] * want[0] + want[1] * want[1] + want[2] * want[2]);
     if (dist < 1.0f || wl < 50.0f) return;
     for (int i = 0; i < 3; ++i) cur[i] /= dist, want[i] /= wl;
-    if (g_aimFollow == 0.0f) for (int i = 0; i < 3; ++i) g_aimDir[i] = want[i];
-    // Locked exactly onto the gun's line: the shots land in the middle of the crosshair; the aim sway moves the view.
-    for (int i = 0; i < 3; ++i) g_aimDir[i] = want[i];
+    const float wantRel = WrapPi(atan2f(want[0], want[2]) - leonYaw);
+    const float wantPitch = atan2f(want[1], sqrtf(want[0] * want[0] + want[2] * want[2]));
+    const float side = At<float>(pl, 0x448), v = *(float*)Va(kAimV);
+    const bool moving = g_stickRx != 0.0f || g_stickRy != 0.0f || fabsf(side - g_lastSide) > 1e-3f ||
+                        fabsf(v - g_lastV) > 1e-3f;
+    g_lastSide = side, g_lastV = v;
+    if (g_aimFollow < 1.0f) {
+        g_relYaw = wantRel, g_relPitch = wantPitch;
+    } else {
+        const float k = 1.0f - expf(-dt / (moving ? 0.04f : 2.5f));
+        g_relYaw = WrapPi(g_relYaw + WrapPi(wantRel - g_relYaw) * k);
+        g_relPitch += (wantPitch - g_relPitch) * k;
+    }
+    const float yaw = leonYaw + g_relYaw, cp = cosf(g_relPitch);
+    const float aim[3] = {cp * sinf(yaw), sinf(g_relPitch), cp * cosf(yaw)};
     g_aimFollow = g_aimFollow + dt / 0.2f < 1.0f ? g_aimFollow + dt / 0.2f : 1.0f;
     const float b = g_aimFollow * g_aimFollow * (3.0f - 2.0f * g_aimFollow);
     float d[3], dl = 0.0f;
-    for (int i = 0; i < 3; ++i) d[i] = cur[i] + (g_aimDir[i] - cur[i]) * b, dl += d[i] * d[i];
+    for (int i = 0; i < 3; ++i) d[i] = cur[i] + (aim[i] - cur[i]) * b, dl += d[i] * d[i];
     dl = sqrtf(dl);
     for (int i = 0; i < 3; ++i) tgt[i] = eye[i] + d[i] / dl * dist;
     if (g_aimFollow >= 1.0f) SetAimCentered();
+    // Measurement: how far the gun's line sits from the middle, and how often the aim counts as moving.
+    static int s_log = 0, s_frames = 0, s_moving = 0;
+    static float s_maxOff = 0.0f;
+    static DWORD s_tick = 0;
+    const float off = sqrtf(WrapPi(wantRel - g_relYaw) * WrapPi(wantRel - g_relYaw) +
+                            (wantPitch - g_relPitch) * (wantPitch - g_relPitch)) * 57.3f;
+    ++s_frames, s_moving += moving, s_maxOff = fmaxf(s_maxOff, off);
+    const DWORD now = GetTickCount();
+    if (now - s_tick >= 1000) {
+        if (s_log < 120 && s_tick) {
+            ++s_log;
+            Log("steady aim: moving %d/%d frames, gun off centre %.2f deg (max %.2f)", s_moving, s_frames, off,
+                s_maxOff);
+        }
+        s_tick = now, s_frames = s_moving = 0, s_maxOff = 0.0f;
+    }
 }
 
 // Ashley: drop a hit from Leon's guns or knife before the game applies it. The attack types are exactly the ones her
