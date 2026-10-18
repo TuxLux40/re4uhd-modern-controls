@@ -21,6 +21,7 @@ using namespace re4;
 static volatile DWORD g_laserTick = 0;  // last frame the game drew the laser
 static float g_laserYaw = 0.0f;         // Leon's yaw and position (x, z) at that moment
 static float g_laserPivot[2] = {};
+static volatile bool g_onTarget = false;  // the beam rests on something that takes damage (the game's own check)
 
 // --------------------------------------------------------------------------------------------------- laser hook
 typedef void(__fastcall* PFN_Laser)(uintptr_t self, void* edx, char draw, char b, char c);
@@ -30,6 +31,7 @@ static void __fastcall HookLaser(uintptr_t self, void* edx, char draw, char b, c
     g_origLaser(self, edx, draw, b, c);
     if (draw) {
         g_laserTick = GetTickCount();
+        g_onTarget = !b && *(const uint8_t*)Va(kLaserOnTarget) != 0;
         // Leon's heading when the laser was computed: the camera may run a frame later, after he turned further.
         const uintptr_t pl = *(uintptr_t*)Va(kPlayerPtr);
         if (pl >= 0x10000 && Readable((void*)pl, 0x200)) {
@@ -180,18 +182,22 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
             }
         }
         const LONG a = th / 2, b = th - a;              // splits the thickness around the centre line
+        // The dot turns red and grows while the aim rests on something that takes damage.
+        const bool hot = g_onTarget;
+        const LONG ds = hot ? th + 2 : th, da = ds / 2, db = ds - da;
         const D3DRECT marks[5] = {
             {cx - gap - len, cy - a, cx - gap, cy + b},        // left
             {cx + gap, cy - a, cx + gap + len, cy + b},        // right
             {cx - a, cy - gap - len, cx + b, cy - gap},        // top
             {cx - a, cy + gap, cx + b, cy + gap + len},        // bottom
-            {cx - a, cy - a, cx + b, cy + b},                  // dot
+            {cx - da, cy - da, cx + db, cy + db},              // dot
         };
-        const DWORD n = 5;
         D3DRECT edge[5];
         for (int i = 0; i < 5; ++i) edge[i] = {marks[i].x1 - 1, marks[i].y1 - 1, marks[i].x2 + 1, marks[i].y2 + 1};
-        dev->Clear(n, edge, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 30, 30, 30), 1.0f, 0);
-        dev->Clear(n, marks, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 245, 245, 245), 1.0f, 0);
+        dev->Clear(5, edge, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 30, 30, 30), 1.0f, 0);
+        dev->Clear(4, marks, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 245, 245, 245), 1.0f, 0);
+        dev->Clear(1, &marks[4], D3DCLEAR_TARGET,
+                   hot ? D3DCOLOR_ARGB(255, 235, 35, 30) : D3DCOLOR_ARGB(255, 245, 245, 245), 1.0f, 0);
     }
 
     if (oldRt) {

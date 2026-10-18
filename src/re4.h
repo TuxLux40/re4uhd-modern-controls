@@ -42,6 +42,9 @@ constexpr uint32_t kFnLaser = 0x0033EA60;
 constexpr uint8_t kSigLaser[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x1C, 0xA1};
 constexpr uint32_t kLaserStart = 0x00879818;  // Vec
 constexpr uint32_t kLaserEnd = 0x00879828;    // Vec
+// Set by LaserUpdate (when its second argument is 0) while the beam rests on something that takes damage: an enemy
+// whose hittable flag is up (cEm+0x3CC bit 10, the beam's hit enemy at cPlayer+0x368) or a shootable surface close by.
+constexpr uint32_t kLaserOnTarget = 0x00879836;  // u8
 // The game's projection: MTXPerspective(CAMERA fovy (+0xC0, degrees), *kProjAspect, ...) at 0x006F0053. The aspect is
 // 4:3 (1.333) even at 16:9; the image is stretched to the full width. re4_tweaks rewrites it for ultrawide.
 constexpr uint32_t kProjAspect = 0x0071377C;  // float
