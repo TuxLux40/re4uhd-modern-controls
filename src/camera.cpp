@@ -462,7 +462,7 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const uintptr_t pl = Player();
     if (!pl) return;
     const Config& cfg = Cfg();
-    const float leonYaw = At<float>(pl, pl::Ang + 4);
+    float leonYaw = At<float>(pl, pl::Ang + 4);
     const float side = At<float>(pl, 0x448);
     const float* pos = (const float*)(pl + pl::Pos);
     if (start || !g_aimLocked) {
@@ -474,7 +474,13 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
         for (int i = 0; i < 3; ++i) g_freeDir[i] = shown[i] / sl;
         g_freeEye[0] = m[3], g_freeEye[1] = m[7], g_freeEye[2] = m[11];
         if (cfg.keepViewOnAim) {
-            g_relYaw = WrapPi(atan2f(g_freeDir[0], g_freeDir[2]) - leonYaw);
+            // Leon turns to face exactly where the view looks (the hook turned him to the free camera's heading, which
+            // the shoulder offset leaves 10-20 deg off), so his gun points at the reticle.
+            float* ang = (float*)(pl + pl::Ang);
+            const float to = atan2f(g_freeDir[0], g_freeDir[2]);
+            Log("cam: aim start, leon turned %+.1f deg to the view", WrapPi(to - leonYaw) * 57.3f);
+            ang[1] = leonYaw = to;
+            g_relYaw = 0.0f;
             g_relPitch = Clamp(atan2f(g_freeDir[1], sqrtf(g_freeDir[0] * g_freeDir[0] + g_freeDir[2] * g_freeDir[2])),
                                -1.0f, 1.0f);
         } else {
