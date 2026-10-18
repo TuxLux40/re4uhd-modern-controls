@@ -428,7 +428,7 @@ void InitShotHook();
 void SetAimCentered();
 
 // Centered aim: the aim camera starts as the game's own (no turn onto the gun: that jumped), then follows Leon's aim.
-// It locks on once the game's view has settled (its smoothing caught up), so cutting the smoothing shows no jump.
+// It locks on from the view on screen, so cutting the game's smoothing shows no jump.
 // Locked, it turns with Leon exactly and with the gun while the aim stick moves, and
 // ignores the gun otherwise: breathing and recoil move the reticle's dot, not the view. It only steps in when the gun
 // strays more than kMaxOff from the middle.
@@ -437,6 +437,7 @@ static float g_aimTime = 0.0f;
 static float g_relYaw = 0.0f, g_relPitch = 0.0f;          // camera direction: yaw relative to Leon's, pitch
 static float g_lastWantRel = 0.0f, g_lastWantPitch = 0.0f;  // the gun's, last frame
 static float g_prevDir[3] = {};                             // the view handed on last frame
+static float g_prevLeonYaw = 0.0f;                          // and Leon's heading then
 static const float kMaxOff = 6.0f * 0.01745329f;
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
@@ -467,16 +468,20 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const bool moving = g_stickRx != 0.0f || g_stickRy != 0.0f;
 
     if (!g_aimLocked) {
-        // The game's view as is. Settled: the free camera's tilt has faded and the rendered view (Camera_60, last
-        // frame's result) has caught up with what was handed on last frame.
-        g_relYaw = WrapPi(atan2f(cur[0], cur[2]) - leonYaw);
-        g_relPitch = atan2f(cur[1], sqrtf(cur[0] * cur[0] + cur[2] * cur[2]));
+        // The game's view as is until the free camera's tilt has faded. Then the lock takes over from the view on screen
+        // (Camera_60: last frame's result, turned by however far Leon turned since), so even a view the game's smoothing
+        // hasn't caught up with yet (Leon turning) doesn't jump. Earliest once that view is close to the game's own.
         const float* m = (const float*)(Va(kCamCtrl) + cc::Camera);
         const float shown[3] = {-m[2], -m[6], -m[10]};
         const float dp = shown[0] * g_prevDir[0] + shown[1] * g_prevDir[1] + shown[2] * g_prevDir[2];
-        if (g_aimTime > 1.5f || (g_aimTime > 0.1f && g_modBlend <= 0.0f && dp > 0.99998f)) {  // 0.36 deg
+        g_relYaw = WrapPi(atan2f(cur[0], cur[2]) - leonYaw);
+        g_relPitch = atan2f(cur[1], sqrtf(cur[0] * cur[0] + cur[2] * cur[2]));
+        if (g_aimTime > 0.1f && g_modBlend <= 0.0f && (dp > 0.9998f || g_aimTime > 0.5f)) {  // 1.1 deg
+            g_relYaw = WrapPi(atan2f(shown[0], shown[2]) + WrapPi(leonYaw - g_prevLeonYaw) - leonYaw);
+            g_relPitch = atan2f(shown[1], sqrtf(shown[0] * shown[0] + shown[2] * shown[2]));
             g_aimLocked = true;
-            Log("cam: aim locked after %.2f s (view off by %.2f deg)", g_aimTime, acosf(fminf(1.0f, dp)) * 57.3f);
+            Log("cam: aim locked after %.2f s (shown view %.2f deg from the game's)", g_aimTime,
+                acosf(fminf(1.0f, dp)) * 57.3f);
         }
         for (int i = 0; i < 3; ++i) g_prevDir[i] = cur[i];
     } else if (moving) {
@@ -484,6 +489,7 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
         g_relPitch += wantPitch - g_lastWantPitch;
     }
     g_lastWantRel = wantRel, g_lastWantPitch = wantPitch;
+    g_prevLeonYaw = leonYaw;
     if (!g_aimLocked) return;
     // Never let the gun leave the middle by more than kMaxOff.
     {
