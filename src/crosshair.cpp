@@ -57,7 +57,7 @@ bool AimCentered() { return GetTickCount() - g_centeredTick < 100; }
 static float g_depth = -1.0f;
 static DWORD g_depthTick = 0;
 bool GunLine(float* start, float* hit);
-float SwayRadius();
+float SpreadRadius();
 static void AimPoint(float* out) {
     // The gun's own line: with the centered aim the drawn laser is turned to the crosshair, which the camera follows.
     float gs[3], ge[3];
@@ -169,19 +169,15 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
         const LONG th = h >= 1400 ? 3 : 2;              // line thickness and dot size
         const LONG len = (LONG)(h * 0.008f) + 1;        // tick length
         LONG gap = (LONG)(h * 0.011f) + 2;              // centre to the inner end of a tick
-        // Centered aim: the laser's red dot wanders inside the ticks with the aim sway, so they sit just outside the
-        // weapon's largest sway, and the reticle has no dot of its own.
-        const bool centered = AimCentered();
-        if (centered) {
+        // Centered aim: the ticks show the spread (remake style): they move out while Leon walks, turns or fires and
+        // come back in while he holds still.
+        if (AimCentered()) {
             const uintptr_t cam = Va(kCamCtrl) + cc::Camera;
             const float fovy = At<float>(cam, 0xC0), aspect = At<float>(Va(kProjAspect), 0);
-            const float r = SwayRadius();
+            const float r = SpreadRadius();
             if (r > 0.0f && fovy > 1.0f && fovy < 170.0f && aspect > 0.5f && aspect < 8.0f) {
                 const float px = tanf(r) / (tanf(fovy * 0.5f * 0.01745329252f) * aspect) * w * 0.5f;
-                // The drift rarely gets past a quarter of the limit (measured with the TMP: limit 0.122, drift up to
-                // 0.022 sideways and 0.02 vertically, shots included).
-                const LONG want = (LONG)(px * 0.3f) + 3;
-                if (want > gap) gap = want < (LONG)(h * 0.06f) ? want : (LONG)(h * 0.06f);
+                gap += (LONG)(px < h * 0.1f ? px : h * 0.1f);
             }
         }
         const LONG a = th / 2, b = th - a;              // splits the thickness around the centre line
@@ -192,7 +188,7 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
             {cx - a, cy + gap, cx + b, cy + gap + len},        // bottom
             {cx - a, cy - a, cx + b, cy + b},                  // dot
         };
-        const DWORD n = centered ? 4 : 5;
+        const DWORD n = 5;
         D3DRECT edge[5];
         for (int i = 0; i < 5; ++i) edge[i] = {marks[i].x1 - 1, marks[i].y1 - 1, marks[i].x2 + 1, marks[i].y2 + 1};
         dev->Clear(n, edge, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 30, 30, 30), 1.0f, 0);

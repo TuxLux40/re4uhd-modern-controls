@@ -78,6 +78,9 @@ constexpr uint8_t kSigLaserLine[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x38, 0xA1};
 constexpr uint32_t kFnSway = 0x00284330;
 constexpr uint8_t kSigSway[] = {0x55, 0x8B, 0xEC, 0x8B, 0x45, 0x08, 0x56, 0x8B, 0x75, 0x10, 0xD9, 0x06};
 constexpr uint32_t kSwayMax = 0x00866C0C;
+// Laser dot (0x0073DA50): spawns the red dot particle at ESI, cdecl, no stack args.
+constexpr uint32_t kFnLaserDot = 0x0033DA50;
+constexpr uint8_t kSigLaserDot[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x18, 0xA1, 0x10, 0x5E, 0xC3, 0x00};
 // Line hit test (0x005BC050), cdecl (float* from, float* to, int, int, int* hit enemy out, int* poly out): world and
 // enemies; cuts `to` at the nearest hit. LaserUpdate uses it on the laser.
 constexpr uint32_t kFnLineHit = 0x001BC050;
