@@ -1,6 +1,6 @@
 <div align="center">
 
-# RE4 OG Modern Controls
+# RE4 UHD Modern Controls
 
 **Play the original Resident Evil 4 (2005) with modern, remake-style controls.**
 No more tank controls: move where you push the stick, look around freely, walk while you aim.
