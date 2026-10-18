@@ -439,7 +439,8 @@ static float g_relYaw = 0.0f, g_relPitch = 0.0f;          // camera direction: y
 static float g_lastWantRel = 0.0f, g_lastWantPitch = 0.0f;  // the gun's, last frame
 static float g_prevDir[3] = {};                             // the view handed on last frame
 static float g_prevLeonYaw = 0.0f;                          // and Leon's heading then
-static const float kMaxOff = 6.0f * 0.01745329f;
+static const float kMaxOff = 12.0f * 0.01745329f;
+static float g_lockTime = 0.0f;
 
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     float p[3], laserYaw, pivotXZ[2];
@@ -480,7 +481,7 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
         if (g_aimTime > 0.1f && g_modBlend <= 0.0f && (dp > 0.9998f || g_aimTime > 0.5f)) {  // 1.1 deg
             g_relYaw = WrapPi(atan2f(shown[0], shown[2]) + WrapPi(leonYaw - g_prevLeonYaw) - leonYaw);
             g_relPitch = atan2f(shown[1], sqrtf(shown[0] * shown[0] + shown[2] * shown[2]));
-            g_aimLocked = true;
+            g_aimLocked = true, g_lockTime = g_aimTime;
             Log("cam: aim locked after %.2f s (shown view %.2f deg from the game's)", g_aimTime,
                 acosf(fminf(1.0f, dp)) * 57.3f);
         }
@@ -494,14 +495,15 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     if (!g_aimLocked) return;
     // Bring the gun to the middle, not the view to the gun: Leon turns by part of the sideways error (the view's
     // direction kept), and the vertical part goes to the aim sway's anchor (shot.cpp). Slow enough that recoil kicks and
-    // most of the breathing still show on the dot. Not while the stick moves: the view follows the gun then.
-    if (!moving) {
+    // most of the breathing still show on the dot; quicker right after the lock, where the game's aim pose starts a few
+    // degrees off. The vertical part rests while the stick moves (the view follows the gun's pitch then).
+    {
         const float dy = WrapPi(wantRel - g_relYaw), dpi = wantPitch - g_relPitch;
-        const float k = 1.0f - expf(-dt / 0.35f);
+        const float k = 1.0f - expf(-dt / (g_aimTime - g_lockTime < 0.6f ? 0.12f : 0.35f));
         float* ang = (float*)(pl + pl::Ang);
         ang[1] = WrapPi(ang[1] - dy * k);
         g_relYaw = WrapPi(g_relYaw + dy * k);  // this frame's view still uses the old heading: same direction
-        NudgeAimPitch(-dpi * k);
+        if (!moving) NudgeAimPitch(-dpi * k);
     }
     // Never let the gun leave the middle by more than kMaxOff.
     {
