@@ -165,6 +165,7 @@ either way, so this table can grow.
   applies saved changes while the game runs
 - [ ] Ada and the other Mercenaries characters: the legs while aiming and reloading on the move only know Leon's
   skeleton, so Ada (Separate Ways, Assignment Ada) and the Mercenaries characters need their own bone mapping
+- [ ] Sort the case automatically, like the remakes (a button in the open case)
 - [ ] Leon's gun pointing exactly at the reticle (the laser bends toward it for now)
 - [x] Remake-style weapon quick select on the d-pad
 - [x] Reload on the move: the legs play Leon's own walk under the reload, at his walking speed
