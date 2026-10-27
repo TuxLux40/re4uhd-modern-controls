@@ -25,8 +25,8 @@ No more tank controls: move where you push the stick, look around freely, walk w
 | 🕹️ **Camera-relative movement** | Push the left stick toward any direction on screen and Leon goes there. He runs by default; hold the run button to walk. |
 | 🎥 **Free camera over the shoulder** | The right stick turns the camera freely around Leon. It sits a little to the right, over his shoulder, like RE5 (`Shoulder=0` centres it). Leave the stick alone while moving and it eases back behind him. It stops at walls. |
 | 🎯 **Aim where you look** | Raise the gun and the view keeps looking where it looked while the camera moves in close over Leon's right shoulder, like RE5. Leon turns to aim there. Aim with the right stick. `KeepViewOnAim=0` swings the view to where Leon looks instead. |
-| 🕹️ **Tank controls still on the d-pad** | Modern controls on the stick, the original tank controls on the d-pad. Use whichever fits the moment. |
-| 🚶 **Walk while aiming** | Move with the left stick while aiming. RE4 has no strafe animations, so Leon glides. |
+| 🔫 **Weapon quick select on the d-pad** | Like the remake: up handguns, right shotguns, down rifles, machine guns and launchers, left grenades. Press a direction again for the next weapon of that kind you carry. The lists are in the ini; `DpadSelect=0` gives the d-pad back to the original tank controls. |
+| 🚶 **Walk while aiming** | Move with the left stick while aiming. RE4 has no strafe animations, so the mod puts a walk cycle on Leon's legs while his arms keep the aim (`Legs=0` turns it off and he glides). |
 | ➕ **Remake-style crosshair** | A reticle in the middle of the screen, and your shots and the laser go there. The camera follows your aim, never the gun, so recoil doesn't shake the view. The original aim sway is gone. Instead the ticks open up while you walk, turn or fire and close again when you hold still, and shots land anywhere inside them. The laser is just a beam now, without its red dot. `CenteredAim=0` brings back the original camera, sway and laser, with the reticle following the laser. |
 | 🔴 **Target indicator** | The centre dot turns red and grows while it rests on something that takes damage (enemies, lamps, barrels). Outside of aiming a small dot marks the middle of the screen (`CenterDot=0` hides it). |
 | 🛡️ **Ashley is safe from your shots** | With the camera free, it's easy to catch her in the crossfire. Your guns and knife no longer hurt her, the way her armour costume protects her; enemies and explosions still do. Can be switched off. |
@@ -67,7 +67,7 @@ To uninstall, delete `Bin32/xinput1_3.dll` and the `RE4ModernControls.ini` / `.l
 
 | | Moving around | While aiming |
 |---|---|---|
-| **Left stick** | Move toward that direction on screen | Walk (Leon glides) |
+| **Left stick** | Move toward that direction on screen | Walk |
 | **Right stick** | Turn the camera | Aim |
 | **LT** | Aim: the camera moves in over Leon's shoulder | |
 | **RT** | Fire from the hip: Leon raises the gun, shoots at the centre dot and lowers it again | Fire |
@@ -77,7 +77,7 @@ To uninstall, delete `Bin32/xinput1_3.dll` and the `RE4ModernControls.ini` / `.l
 | **B** | Hold to walk instead of run | |
 | **Y / Back / Start** | Inventory / map / options (save, load) | |
 | **RB** | Ashley: wait / follow | |
-| **D-pad** | Classic tank controls, untouched | |
+| **D-pad** | Weapon quick select (again: the next one of that kind) | Weapon quick select |
 
 This is the RE5-style layout (`[Buttons] Layout=RE5`). Set `GameType` to the layout chosen in the game's own options so the mod presses the right buttons: 1, 2 or 3 for Type I, II or III in its Controller Setup (Type I is the default). Menus, the inventory and cutscene prompts keep the game's own
 layout. The game's action prompts ("X Open", "X Save") would show X while A acts, so they are hidden
@@ -86,9 +86,9 @@ layout. The game's action prompts ("X Open", "X Save") would show X while A acts
 Y map, Start inventory).
 
 > [!TIP]
-> **Best of both worlds:** the mod only changes the left stick. The d-pad still drives Leon with the original tank
-> controls, so you can run around with modern controls and switch to the d-pad whenever you want the precise, classic
-> handling, for example to line up with a ladder or a tight doorway.
+> **Prefer the classic tank controls now and then?** With `[Weapons] DpadSelect=0` the d-pad drives Leon with the
+> original tank controls again, so you can switch to it whenever you want the precise, classic handling, for example
+> to line up with a ladder or a tight doorway.
 
 ## Settings
 
@@ -159,10 +159,20 @@ either way, so this table can grow.
 
 ## Planned
 
-- [ ] In-game settings page: run by default, free or classic camera, modern or tank controls
+- [ ] In-game settings page for the basic choices: modern or tank controls, run by default, free or classic camera
+- [ ] Settings window for the fine-tuning: a small program next to the game that edits `RE4ModernControls.ini` with
+  switches and sliders instead of a text editor (speeds, distances, the camera's shoulder spot...); the mod already
+  applies saved changes while the game runs
+- [ ] Ada and the other Mercenaries characters: the legs while aiming and reloading on the move only know Leon's
+  skeleton, so Ada (Separate Ways, Assignment Ada) and the Mercenaries characters need their own bone mapping
 - [ ] Leon's gun pointing exactly at the reticle (the laser bends toward it for now)
-- [ ] Remake-style weapon quick select on the d-pad
-- [ ] Reload and fire from the hip on the move, like the remake (Leon stops for now): the legs play the normal walk (not the run) under the upper body's reload or shot, as RE3Controls does for RE5; and quick turn in the RE3 (2020) style
+- [x] Remake-style weapon quick select on the d-pad
+- [x] Reload on the move: the legs play Leon's own walk under the reload, at his walking speed
+- [ ] Calibrate the legs on the move: the step at the end of a reload still jumps a little (mostly the right leg),
+  and the walk under the reload could match the hips and the step length better
+- [ ] Fire from the hip on the move with the walk on the legs, the same way as the reload (Leon only slows down for
+  now); and quick turn in the RE3
+  (2020) style
 - [ ] Support for other game builds by finding the game's code instead of relying on fixed addresses
 
 ## Known issues
@@ -171,7 +181,11 @@ either way, so this table can grow.
   they can be changed in the ini while the game runs.
 - Leon's gun doesn't always point exactly at the reticle, so the laser leaves the gun at a slight angle. Shots
   still go to the reticle.
-- Reloading and firing from the hip: Leon keeps moving but glides, his legs stand still (they need their own animation).
+- Reloading on the move: Leon's legs walk, but where the reload ends and he walks or runs on, his legs still jump a
+  little (mostly the right leg). Firing from the hip on the move: Leon slows down and glides, without the walk on his
+  legs.
+- Walking while aiming: his legs step with a simple walk cycle of the mod's own (`Legs=0` turns it off and he glides);
+  RE4 has no strafe animations.
 - Walking while aiming follows slopes and stops at walls; Ashley is kept on the ground behind you.
 
 Found a bug? [Open an issue](https://github.com/TuxLux40/re4uhd-modern-controls/issues), and attach
@@ -183,6 +197,7 @@ Found a bug? [Open an issue](https://github.com/TuxLux40/re4uhd-modern-controls/
 |---|---|
 | **RE3Controls** for Resident Evil 5, by palecvzhope (MIT) | The idea, the design and the XInput proxy this mod started from |
 | [**re4_tweaks**](https://github.com/nipkownix/re4_tweaks), by nipkow and contributors (zlib) | The reverse-engineered RE4 structures and code locations this mod builds on; the automatic QTEs are ported from its `DisableQTE` (`src/qte.cpp`, altered) |
+| [**boshjerns' RE4 SDK**](https://github.com/boshjerns/re4-boshjerns-sdk), by boshjerns (MIT) | The legs while aiming are ported from its "legs v5" (`src/legs.cpp`, altered) and the test kit's command channel (`src/testkit.cpp`) follows its design |
 | [**Ghidra**](https://github.com/NationalSecurityAgency/ghidra) (NSA) | Disassembly and decompilation of the game |
 | [**REA: Reverse Engineer Anything**](https://github.com/morluto/rea), by morluto | Reverse-engineering tooling for AI agents, used to analyse the game |
 | [**MinHook**](https://github.com/TsudaKageyu/minhook), by Tsuda Kageyu (BSD 2-clause) | Function hooking |
