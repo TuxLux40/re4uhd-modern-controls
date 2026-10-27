@@ -65,6 +65,8 @@ static float g_appliedDefaultPitch = 0.0f;  // Config::defaultPitch that g_pitch
 static float g_stickIdle = 0.0f;             // seconds since the right stick last turned the camera
 static float g_modBlend = 1.0f;              // how much of the free camera's tilt and height applies (0..1)
 static float g_room = -1.0f;                 // smoothed share of the camera distance free of walls (-1 = start over)
+static float g_outPoint[8];  // our camera this frame: eye, target, roll, fovy (CamPoint layout)
+static float g_back = -1.0f;  // smoothed free camera distance behind Leon (-1 = start over, -2 = from the shown view)
 static bool g_haveYaw = false;
 static volatile DWORD g_lastFrameTick = 0;
 static bool g_wasAiming = false;
@@ -365,6 +367,7 @@ static void __fastcall HookQfpsMoveBody(uintptr_t self, void* edx) {
         g_haveYaw = true;
         g_wasAiming = false;
         g_room = -1.0f;
+        g_back = -1.0f;
     }
     g_lastFrameTick = now;
     for (int i = 0; i < 3; ++i) s_lastPos[i] = lpNow[i];
@@ -455,6 +458,7 @@ static void __fastcall HookQfpsMoveBody(uintptr_t self, void* edx) {
     } else if (g_wasAiming) {
         g_pitch = cfg.defaultPitch;
     }
+    if (g_wasAiming) g_back = -2.0f;  // glide out from the aim's distance
     g_wasAiming = false;
 
     float* ang = (float*)(pl + pl::Ang);
@@ -494,6 +498,14 @@ static void __fastcall HookQfpsMoveBody(uintptr_t self, void* edx) {
         const float step = cfg.autoFollow * ease * dt;
         g_yaw = WrapPi(g_yaw + (fabsf(diff) <= step ? diff : copysignf(step, diff)));
     }
+    // Auto-center: on the same condition the view tilts back to its resting pitch, slowly and at a steady rate (eased
+    // only over the last few degrees so it lands without a jolt).
+    if (cfg.autoCenter > 0.0f && g_moving && g_stickIdle >= cfg.autoFollowDelay) {
+        const float diff = cfg.defaultPitch - g_pitch;
+        const float ease = fabsf(diff) < 0.05f ? 0.3f + 0.7f * fabsf(diff) / 0.05f : 1.0f;
+        const float step = cfg.autoCenter * ease * dt;
+        g_pitch += fabsf(diff) <= step ? diff : copysignf(step, diff);
+    }
     // Stick up looks up: the camera comes down.
     g_pitch = Clamp(g_pitch - stickY * cfg.pitchSpeed * dt, -0.6f, 1.0f);
 
@@ -523,14 +535,32 @@ static void __fastcall HookQfpsMoveBody(uintptr_t self, void* edx) {
             const float rx = -cosf(g_yaw), rz = sinf(g_yaw);
             eye[0] += rx * cfg.shoulder, eye[2] += rz * cfg.shoulder;
             tgt[0] += rx * cfg.shoulder, tgt[2] += rz * cfg.shoulder;
-            // Closer (Distance = share of the original distance to Leon): forward along the view.
+            // Closer (Distance = share of the original distance to Leon): forward along the view. The game's own
+            // distance changes per area (some bring it in to about 1400), so MinDistance keeps the camera from ending
+            // up on his back there; it may go further back than the game's camera, the wall check below covers that.
             float f[3] = {tgt[0] - eye[0], tgt[1] - eye[1], tgt[2] - eye[2]};
             const float fl = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
-            if (fl > 1.0f && cfg.distance < 1.0f) {
+            if (fl > 1.0f) {
                 for (int i = 0; i < 3; ++i) f[i] /= fl;
                 const float toLeon = (pos[0] - eye[0]) * f[0] + (pos[2] - eye[2]) * f[2];
-                if (toLeon > 0.0f)
-                    for (int i = 0; i < 3; ++i) eye[i] += f[i] * toLeon * (1.0f - cfg.distance);
+                const float want = toLeon * cfg.distance > cfg.minDistance ? toLeon * cfg.distance : cfg.minDistance;
+                if (toLeon > 0.0f) {
+                    // Eased: on stairs and slopes the game's own camera jumps back and forth by several hundred
+                    // units from one frame to the next, and coming out of an aim the view starts at the aim's
+                    // distance.
+                    if (g_back == -2.0f) {
+                        const float* o = g_outPoint;
+                        float of[2] = {o[3] - o[0], o[5] - o[2]};
+                        const float ol = sqrtf(of[0] * of[0] + of[1] * of[1]);
+                        g_back = ol > 1.0f ? ((pos[0] - o[0]) * of[0] + (pos[2] - o[2]) * of[1]) / ol : want;
+                        if (g_back < 100.0f) g_back = want;
+                    } else if (g_back < 0.0f) {
+                        g_back = want;
+                    } else {
+                        g_back += (want - g_back) * (1.0f - expf(-dt / 0.5f));
+                    }
+                    for (int i = 0; i < 3; ++i) eye[i] += f[i] * (toLeon - g_back);
+                }
             }
         }
         // Looking up must not put the camera into the floor.
@@ -599,13 +629,21 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const float side = At<float>(pl, 0x448);
     const float* pos = (const float*)(pl + pl::Pos);
     if (start || !g_aimLocked) {
-        // The view on screen (Camera_60, last frame's: the free camera) is where the glide starts.
-        const float* m = (const float*)(Va(kCamCtrl) + cc::Camera);
-        float shown[3] = {-m[2], -m[6], -m[10]};
+        // The view on screen (Camera_60's finished eye and target, last frame's: the free camera, after the game's
+        // smoothing) is where the glide starts. Its view matrix gave an eye as far back as the game's own camera
+        // (Distance and the shoulder left out) and a heading up to 20 deg off: the view jumped there for a frame.
+        const float* sp = (const float*)(Va(kCamCtrl) + cc::Camera + cc::CameraPoint);
+        float shown[3] = {sp[3] - sp[0], sp[4] - sp[1], sp[5] - sp[2]};
         const float sl = sqrtf(shown[0] * shown[0] + shown[1] * shown[1] + shown[2] * shown[2]);
         if (sl < 0.5f) return;
-        for (int i = 0; i < 3; ++i) g_freeDir[i] = shown[i] / sl;
-        g_freeEye[0] = m[3], g_freeEye[1] = m[7], g_freeEye[2] = m[11];
+        for (int i = 0; i < 3; ++i) g_freeDir[i] = shown[i] / sl, g_freeEye[i] = sp[i];
+        {
+            const float* m = (const float*)(Va(kCamCtrl) + cc::Camera);
+            auto hd = [&](float x, float z) { return sqrtf((x - pos[0]) * (x - pos[0]) + (z - pos[2]) * (z - pos[2])); };
+            Log("diag aim start eye: shown %.0f from leon, matrix %.0f (%+.1f deg), ours %.0f", hd(sp[0], sp[2]),
+                hd(m[3], m[11]), WrapPi(atan2f(-m[2], -m[10]) - atan2f(shown[0], shown[2])) * 57.3f,
+                hd(g_outPoint[0], g_outPoint[2]));
+        }
         // An aim started during the sweep back from an action camera (a kick) would keep that far-away eye as the spot
         // a hip-fire shot pulls back to: the eye of this frame instead.
         const float fx = g_freeEye[0] - pos[0], fz = g_freeEye[2] - pos[2];
@@ -759,7 +797,6 @@ static float g_fade[2] = {1.0f, 1.0f};  // current factor: Leon, Ashley
 static int g_level[2] = {2, 2};  // 0 most see-through .. 2 visible
 static DWORD g_fadeTick = 0;
 
-static float g_outPoint[8];  // our camera this frame: eye, target, roll, fovy (CamPoint layout)
 static DWORD g_outTick = 0;
 
 static void __fastcall HookQfpsMove(uintptr_t self, void* edx) {

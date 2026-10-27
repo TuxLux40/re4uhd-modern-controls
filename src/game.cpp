@@ -190,6 +190,7 @@ void InitButtonHooks();
 void InitPromptHooks();
 void InitQteHooks();
 void InitLegsHooks();
+void InitPickupHooks();
 void InitWeapons();
 void InitGameHooks() {
     InitWeapons();
@@ -198,6 +199,7 @@ void InitGameHooks() {
     InitQteHooks();
     InitCameraHooks();
     InitLegsHooks();
+    InitPickupHooks();
     HookAt(kFnCamCtrlMove, kSigCamCtrlMove, sizeof(kSigCamCtrlMove), (void*)HookCamMove, (void**)&g_origCamMove,
            "CameraControl::move");
 }

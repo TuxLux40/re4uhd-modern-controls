@@ -2,6 +2,8 @@
 // next weapon Leon carries from its list (default: up handguns and magnums, right shotguns, down rifles, machine guns
 // and launchers, left grenades); pressing it again moves on through the list. The d-pad's tank controls are off then;
 // menus and the inventory keep the d-pad.
+// Rearm ([Weapons] Rearm): when the last grenade or egg leaves Leon's hands he'd stand there unarmed; the weapon he
+// held before it comes back as soon as the game lets him switch (the same switch as the d-pad).
 //
 // The switch follows re4_tweaks' weapon hotkeys (dllmain/Trainer.cpp HotkeySlotPressed and the cycle lists in
 // dllmain/Settings.h, https://github.com/nipkownix/re4_tweaks, zlib license, Copyright (C) 2021 nipkow):
@@ -46,6 +48,9 @@ constexpr uint32_t kFnScheduler = 0x002C4440;
 const uint8_t kSigScheduler[] = {0x55, 0x8B, 0xEC, 0x51, 0x80, 0x3D};
 typedef void(__fastcall* PFN_Scheduler)(uintptr_t self, void* edx);
 PFN_Scheduler g_origScheduler = nullptr;
+
+// cdecl (id, ITEM_INFO*): the item's type at +2 (1 = weapon; re4_tweaks bio4::itemInfo)
+constexpr uint32_t kFnItemInfo = 0x003057D0;
 
 volatile LONG g_request = -1;  // the d-pad direction waiting for the main thread (0 up, 1 right, 2 down, 3 left)
 
@@ -103,6 +108,47 @@ void Switch(int dir) {
         return;
     }
 }
+// The id of the item in Leon's hands, 0 for none (the pointer can outlive the item: a used-up one is no longer in use).
+uint16_t ArmedId(uintptr_t mgr) {
+    const uintptr_t cur = At<uintptr_t>(mgr, 0x0C);
+    if (cur < 0x10000 || !Readable((void*)cur, 0x0E) || !(At<uint8_t>(cur, 4) & 1)) return 0;
+    return At<uint16_t>(cur, 0);
+}
+
+bool IsWeapon(uint16_t id) {
+    uint8_t info[32] = {};
+    ((void(__cdecl*)(uint32_t, void*))Va(kFnItemInfo))(id, info);
+    return info[2] == 1;
+}
+
+// Once per frame: notes the last real weapon, and brings it back after the last throwable is gone.
+void Rearm() {
+    static uint16_t s_armed = 0, s_weapon = 0, s_want = 0;
+    static DWORD s_since = 0;
+    const uintptr_t mgr = Va(kItemMgr);
+    const uint16_t id = ArmedId(mgr);
+    if (id != s_armed) {
+        if (id && IsWeapon(id)) s_weapon = id;
+        // A throwable gone from his hands (not swapped for another item): the last one was thrown.
+        if (!id && s_armed && !IsWeapon(s_armed) && s_weapon) s_want = s_weapon, s_since = GetTickCount();
+        if (id) s_want = 0;  // he took something himself
+        s_armed = id;
+    }
+    if (!s_want) return;
+    if (GetTickCount() - s_since > 5000) {  // never got a moment to switch (a cutscene, the case opened ...)
+        s_want = 0;
+        return;
+    }
+    const uintptr_t pl = *(uintptr_t*)Va(re4::kPlayerPtr);
+    if (pl < 0x10000 || !Readable((void*)(pl + re4::pl::RNo0), 4)) return;
+    const uint8_t r2 = At<uint8_t>(pl, re4::pl::RNo0 + 2);
+    if (r2 == 2 || r2 == 4 || !g_subScr(pl)) return;  // still throwing: wait
+    const uintptr_t item = Carried(mgr, s_want);
+    const bool ok = item && g_arm(mgr, item);
+    if (ok) g_change();
+    Log("weapons: last throwable gone -> item %u%s", s_want, !item ? " not carried any more" : ok ? "" : ", arm refused");
+    s_want = 0;
+}
 }  // namespace
 
 void WeaponsTick();
@@ -148,4 +194,5 @@ void WeaponsPad(XGamepad& p) {
 void WeaponsTick() {
     const LONG d = InterlockedExchange(&g_request, -1);
     if (d >= 0 && Ready()) Switch((int)d);
+    if (g_arm && g_change && g_subScr && Cfg().rearm) Rearm();
 }

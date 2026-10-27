@@ -208,8 +208,10 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
 typedef HRESULT(STDMETHODCALLTYPE* PFN_Present)(IDirect3DDevice9*, const RECT*, const RECT*, HWND, const RGNDATA*);
 static PFN_Present g_origPresent = nullptr;
 
+void DrawTicker(IDirect3DDevice9* dev);  // ticker.cpp
 static HRESULT STDMETHODCALLTYPE HookPresent(IDirect3DDevice9* dev, const RECT* src, const RECT* dst, HWND wnd,
                                              const RGNDATA* dirty) {
+    DrawTicker(dev);
     DrawCrosshair(dev);
     return g_origPresent(dev, src, dst, wnd, dirty);
 }

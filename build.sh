@@ -21,7 +21,7 @@ done
 $ZIG c++ -target x86-windows-gnu -O2 -std=c++17 -shared -fno-exceptions -fno-rtti -g0 -s \
   "-DRE4MC_VERSION_STR=\"$VERSION\"" \
   -Ithird_party/minhook/include -Isrc -Ibuild src/*.cpp build/mh_*.o src/xinput1_3.def \
-  -o build/xinput1_3.dll -luser32 -lkernel32
+  -o build/xinput1_3.dll -luser32 -lkernel32 -lgdi32
 ls -la build/xinput1_3.dll
 
 if [ "${1:-}" = package ]; then

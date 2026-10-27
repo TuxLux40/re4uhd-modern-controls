@@ -63,6 +63,8 @@ void LoadConfig() {
     c.centerDot = ReadFloat(path, "Aim", "CenterDot", 1.0f) != 0.0f;
     c.hideActionPrompt = ReadFloat(path, "Buttons", "HideActionPrompt", 1.0f) != 0.0f;
     c.autoQte = ReadFloat(path, "Buttons", "AutoQTE", 1.0f) != 0.0f;
+    c.quickPickup = ReadFloat(path, "Buttons", "QuickPickup", 1.0f) != 0.0f;
+    c.pickupTicker = ReadFloat(path, "Buttons", "PickupTicker", 1.0f) != 0.0f;
     c.keepViewOnAim = ReadFloat(path, "Aim", "KeepViewOnAim", 1.0f) != 0.0f;
     c.aimShoulderRight = ReadFloat(path, "Aim", "ShoulderRight", 400.0f);
     c.aimShoulderBack = ReadFloat(path, "Aim", "ShoulderBack", 750.0f);
@@ -74,10 +76,12 @@ void LoadConfig() {
     c.distance = ReadFloat(path, "Camera", "Distance", 0.6f);
     if (c.distance < 0.2f) c.distance = 0.2f;
     if (c.distance > 1.0f) c.distance = 1.0f;
+    c.minDistance = ReadFloat(path, "Camera", "MinDistance", 1100.0f);
     c.yawSpeed = ReadFloat(path, "Camera", "YawSpeed", 170.0f) * kDeg;
     c.pitchSpeed = ReadFloat(path, "Camera", "PitchSpeed", 100.0f) * kDeg;
     c.autoFollow = ReadFloat(path, "Camera", "AutoFollow", 80.0f) * kDeg;
     c.autoFollowDelay = ReadFloat(path, "Camera", "AutoFollowDelay", 1.0f);
+    c.autoCenter = ReadFloat(path, "Camera", "AutoCenter", 10.0f) * kDeg;
     c.invertX = ReadFloat(path, "Camera", "InvertX", 0.0f) != 0.0f;
     c.invertY = ReadFloat(path, "Camera", "InvertY", 0.0f) != 0.0f;
     c.fade = ReadFloat(path, "Camera", "Fade", 1.0f) != 0.0f;
@@ -85,6 +89,7 @@ void LoadConfig() {
     c.fadeFar = ReadFloat(path, "Camera", "FadeFar", 650.0f);
     c.fadeMin = ReadFloat(path, "Camera", "FadeMin", 0.3f);
     c.dpadWeapons = ReadFloat(path, "Weapons", "DpadSelect", 1.0f) != 0.0f;
+    c.rearm = ReadFloat(path, "Weapons", "Rearm", 1.0f) != 0.0f;
     // The default lists are re4_tweaks' weapon hotkey cycles (dllmain/Settings.h), the last two joined on down.
     static const char* const kDir[4] = {"Up", "Right", "Down", "Left"};
     static const char* const kDefList[4] = {"35,37,33,39,3,41,42,55", "44,45,71,148", "16,46,47,48,52,83,53,109,54",
@@ -106,7 +111,8 @@ void LoadConfig() {
         c.crosshair, c.centeredAim, c.protectAshley);
     Log("config: run %d outer %.2f turn %.2f rad/s | cam pitch %.3f height %.0f yaw %.2f pitch %.2f rad/s inv %d%d",
         c.run, c.outerRing, c.turnSpeed, c.defaultPitch, c.height, c.yawSpeed, c.pitchSpeed, c.invertX, c.invertY);
-    Log("config: auto-follow %.2f rad/s after %.1f s", c.autoFollow, c.autoFollowDelay);
+    Log("config: auto-follow %.2f rad/s, auto-center %.2f rad/s after %.1f s", c.autoFollow, c.autoCenter,
+        c.autoFollowDelay);
 }
 
 void ConfigTick() {

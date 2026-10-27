@@ -5,3 +5,4 @@ dist/
 *.gpr
 *.rep/
 *_decomp.c
+__pycache__/
