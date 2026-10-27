@@ -109,9 +109,38 @@ static void DrawCrosshair(IDirect3DDevice9* dev) {
     // shots go there). Otherwise it sits on the laser's end.
     float nx = 0.0f, ny = 0.0f;
     const bool centered = CenteredView();
-    const bool aiming = GetTickCount() - g_laserTick <= 100;
-    // Outside of aiming, with the free camera: just the dot in the middle, where the aim will start.
-    const bool dotOnly = !aiming && Cfg().centeredAim && Cfg().centerDot && FreeCameraActive();
+    // The laser shows (or showed a moment ago in this aim: some guns switch it off for about 0.25 s after each shot).
+    const DWORD sinceLaser = GetTickCount() - g_laserTick;
+    bool aiming = sinceLaser <= 100 || (centered && sinceLaser <= 600);
+    // The centered aim never puts the reticle on the laser's end: without the aim camera (the frame the aim ends, a
+    // reload with X alone, a hit) that end is somewhere else on screen and showed as a second crosshair.
+    if (aiming && !centered && Cfg().centeredAim) aiming = false;
+    // Outside of aiming, with the free camera or while the aim camera waits for the laser: just the dot in the middle.
+    const bool dotOnly = !aiming && Cfg().centeredAim && Cfg().centerDot && (FreeCameraActive() || centered);
+    // Diagnostics: which reticle this frame shows, logged when it changes (none, the free camera's dot, centred, at the
+    // laser's end, laser but no projection / off screen).
+    {
+        static int s_state = -1;
+        static DWORD s_since = 0;
+        float lx = 0.0f, ly = 0.0f;
+        int st = 0;
+        if (Cfg().crosshair) {
+            if (aiming && centered) st = 2;
+            else if (aiming) st = ProjectLaserEnd(screenAspect, &lx, &ly) ? (fabsf(lx) < 1.0f && fabsf(ly) < 1.0f ? 3 : 4) : 4;
+            else st = dotOnly ? 1 : 0;
+        }
+        if (st != s_state) {
+            static const char* names[] = {"none", "dot", "centred", "AT LASER END", "laser, not drawn"};
+            const DWORD now = GetTickCount();
+            if (st == 3)
+                Log("diag reticle: %s -> %s, ndc %.3f %.3f (previous lasted %u ms)", s_state >= 0 ? names[s_state] : "-",
+                    names[st], lx, ly, now - s_since);
+            else
+                Log("diag reticle: %s -> %s (previous lasted %u ms)", s_state >= 0 ? names[s_state] : "-", names[st],
+                    now - s_since);
+            s_state = st, s_since = now;
+        }
+    }
     if (!Cfg().crosshair || (!aiming && !dotOnly) || (aiming && !centered && !ProjectLaserEnd(screenAspect, &nx, &ny)))
         return;
     if (fabsf(nx) >= 1.0f || fabsf(ny) >= 1.0f) return;

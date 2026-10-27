@@ -225,6 +225,38 @@ static bool Steer(const float* from, const float* shotDir, float* out, float sca
     return Normalize(out) > 0.0f;
 }
 
+// Diagnostics: the angle between the gun's own line from `from` and the line to the point under the reticle (-1 when
+// there is none this frame).
+static float DiagGunOff(const float* from) {
+    if (GetTickCount() - g_targetTick > 100 || GetTickCount() - g_gunTick > 100) return -1.0f;
+    float gun[3] = {g_gunEnd[0] - g_gunStart[0], g_gunEnd[1] - g_gunStart[1], g_gunEnd[2] - g_gunStart[2]};
+    float want[3] = {g_target[0] - from[0], g_target[1] - from[1], g_target[2] - from[2]};
+    if (!Normalize(gun) || !Normalize(want)) return -1.0f;
+    const float c = Dot(gun, want);
+    return acosf(c > 1.0f ? 1.0f : c < -1.0f ? -1.0f : c) * 57.3f;
+}
+
+// Diagnostics: the laser's state (0 to the reticle, 1 no centred view so it follows the gun, 2 refused: the reticle's
+// point is behind or beside the gun), logged when it changes, plus every 0.5 s the largest gun-to-reticle angle.
+static void DiagLaser(int state, float off) {
+    static int s_state = -1;
+    static DWORD s_since = 0, s_sum = 0;
+    static float s_max = 0.0f;
+    static int s_frames = 0, s_steered = 0;
+    const DWORD now = GetTickCount();
+    if (now - s_since > 300 && s_state >= 0 && now - s_sum > 300) s_state = -1;  // a new aim after a pause
+    static const char* names[] = {"to the reticle", "FOLLOWS THE GUN (no centred view)", "FOLLOWS THE GUN (reticle point behind/beside it)"};
+    if (state != s_state) Log("diag laser: %s, gun %.1f deg off the reticle", names[state], off);
+    if (state != s_state) s_state = state;
+    s_since = now;
+    if (off > s_max) s_max = off;
+    ++s_frames, s_steered += state == 0;
+    if (now - s_sum >= 500) {
+        if (s_frames) Log("diag laser 0.5s: gun up to %.1f deg off the reticle, laser steered %d/%d frames", s_max, s_steered, s_frames);
+        s_sum = now, s_max = 0.0f, s_frames = s_steered = 0;
+    }
+}
+
 static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, float* end) {
     g_origLaserLine(self, edx, start, end);
     // Only the laser itself (LaserUpdate); the other callers use the line for their own checks.
@@ -237,17 +269,24 @@ static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, fl
     g_lineHit(s, g_gunHit, 0, 0, &em, &poly);
     g_gunTick = GetTickCount();
     g_hideLaserDot = 0;
-    if (!CastTarget(start)) return;
+    if (!CastTarget(start)) {
+        DiagLaser(1, -1.0f);
+        return;
+    }
     g_hideLaserDot = 1;
     float dir[3] = {end[0] - start[0], end[1] - start[1], end[2] - start[2]};
     const float len = Normalize(dir);
     float nd[3];
-    if (len > 0.0f && Steer(start, dir, nd, 0.0f))
+    const bool steered = len > 0.0f && Steer(start, dir, nd, 0.0f);
+    DiagLaser(steered ? 0 : 2, DiagGunOff(start));
+    if (steered)
         for (int i = 0; i < 3; ++i) end[i] = start[i] + nd[i] * len;
 }
 
 static void __cdecl HookBullet(uintptr_t owner, float* from, float* to, uint32_t wep, uint32_t a5, uint32_t a6) {
     static int logged = 0;
+    if (owner && owner == *(uintptr_t*)Va(kPlayerPtr) && Readable(from, 12) && Readable(to, 12) && !CenteredView())
+        Log("diag shot: weapon %u NOT steered (no centred view)", wep & 0xFFFF);
     if (owner && owner == *(uintptr_t*)Va(kPlayerPtr) && Readable(from, 12) && Readable(to, 12) && CastTarget(from)) {
         float dir[3] = {to[0] - from[0], to[1] - from[1], to[2] - from[2]};
         const float len = Normalize(dir);
@@ -261,9 +300,15 @@ static void __cdecl HookBullet(uintptr_t owner, float* from, float* to, uint32_t
                 ++logged;
                 Log("shot: weapon %u to the reticle, spread %.2f deg", wep & 0xFFFF, scatter * 57.3f);
             }
+            static DWORD s_last = 0;
+            if (GetTickCount() - s_last > 100)
+                s_last = GetTickCount(), Log("diag shot: weapon %u steered, gun %.1f deg off the reticle, spread %.2f deg",
+                                             wep & 0xFFFF, DiagGunOff(from), scatter * 57.3f);
             g_origBullet(owner, from, nt, wep, a5, a6);  // a copy: the caller's buffer stays as it was
             return;
         }
+        Log("diag shot: weapon %u NOT steered (reticle point behind/beside the gun), gun %.1f deg off", wep & 0xFFFF,
+            DiagGunOff(from));
     }
     g_origBullet(owner, from, to, wep, a5, a6);
 }
@@ -280,6 +325,14 @@ static volatile DWORD g_setPitchUntil = 0;
 void SetAimPitch(float rad) {
     g_setPitch = fmaxf(-1.4f, fminf(1.4f, rad));
     g_setPitchUntil = GetTickCount() + 300;
+}
+// The sway anchor came back after a gap (a weapon switch drops it for a few frames): its value then is the game's
+// reset, not a stick move, so the camera can't see it as a jump.
+static bool g_anchorBack = false;
+bool TakeAimReset() {
+    const bool r = g_anchorBack;
+    g_anchorBack = false;
+    return r;
 }
 float TakeAimPitchMove() {
     const float m = g_pitchMove;
@@ -299,6 +352,7 @@ static void __cdecl HookSway(uintptr_t pl, uint32_t mode, float* v, float* side)
         g_haveAnchor = false, g_pitchMove = 0.0f;
         return;
     }
+    if (!g_haveAnchor) g_anchorBack = true;
     if ((int)(g_setPitchUntil - GetTickCount()) > 0) {
         *(float*)(sw + 0x28) = g_setPitch;
         *(float*)Va(kAimV) = g_setPitch * 0.63661977f;

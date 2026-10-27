@@ -19,6 +19,19 @@
 #include "re4.h"
 
 bool GameplayView();
+bool CameraControlRunning();
+
+// Leon's aim routine (r_no_0 0, r_no_1 6 gun / 0xB knife) while the world runs: the sniper's scope and the shooting
+// gallery use another camera than the shoulder one (GameplayView is off there), but the RE5 layout has to stay.
+// Returns r_no_2 of the gun stance (0 raising, 1 ready, 2 firing, 4 reloading...), 0 for the knife, -1 when not aiming.
+int AimStance() {
+    const uintptr_t pl = *(uintptr_t*)Va(re4::kPlayerPtr);
+    if (pl < 0x10000 || !Readable((void*)(pl + re4::pl::RNo0), 4) || !CameraControlRunning()) return -1;
+    const uint8_t r0 = *(uint8_t*)(pl + re4::pl::RNo0), r1 = *(uint8_t*)(pl + re4::pl::RNo0 + 1);
+    if (r0 != 0) return -1;
+    if (r1 == 0xB) return 0;
+    return r1 == 6 ? *(uint8_t*)(pl + re4::pl::RNo0 + 2) : -1;
+}
 
 // The weapon in Leon's hands can reload now (not full, ammo left): cPlayer+0x7D8 (cPlWep) -> +0x34 cObjWep, whose
 // virtual reloadable() (vtable +0x4C) is what the game's own reload check calls (0x0067C9A0 path). Unknown (no weapon
@@ -37,9 +50,9 @@ static bool CanReload() {
     return ok;
 }
 
-// Shots without the aim button: the gun needs kRaise to come up before the first shot counts (a quick tap still fires
-// once it is up), and stays up kLinger after the trigger is let go, so the next shot is immediate.
-static const DWORD kRaise = 200, kLinger = 600, kTap = 80;
+// Shots without the aim button: the gun needs to come up before the first shot counts (Leon's aim stance reports
+// ready, r_no_2 1; kRaiseMax in case it never does; a quick tap still fires once it is up), and stays up kLinger after the trigger is let go, so the next shot is immediate.
+static const DWORD kRaiseMax = 500, kLinger = 600, kTap = 80;
 static volatile bool g_quickAim = false, g_quickReload = false;
 bool QuickAim() { return g_quickAim; }
 bool QuickReload() { return g_quickReload; }  // a reload with X alone: the free camera stays
@@ -145,14 +158,16 @@ void RemapButtons(XGamepad& p) {
     static WORD prev = 0, latched = 0;
     static bool prevLt = false, prevRt = false, ltLatched = false, rtLatched = false;
     static DWORD reloadStart = 0;  // the reload without aiming in progress (0 = none)
-    static DWORD hipStart = 0, hipLast = 0;  // the shooting without aiming in progress: start, trigger last held
-    const bool game = GameplayView();
+    static DWORD hipStart = 0, hipLast = 0, hipReady = 0;  // the shooting without aiming: start, trigger last held, gun up
+    const bool game = GameplayView() || AimStance() >= 0;
     const WORD in = p.wButtons;
     const bool lt = p.bLeftTrigger > kTrigger, rt = p.bRightTrigger > kTrigger;
     // Latch presses that start in gameplay; a latch ends when the button is released.
     if (game) latched |= in & ~prev & kRemapped;
     latched &= in;
-    if (game && lt && !prevLt) ltLatched = true;
+    // The aim latches while held, not only on the press: an aim pressed during a kick or a hit (no gameplay camera)
+    // and held into gameplay otherwise counted as no aim, so every shot was a hip-fire shot with its camera pull-back.
+    if (game && lt) ltLatched = true;
     if (!lt) ltLatched = false;
     if (game && rt && !prevRt) rtLatched = true;
     if (!rt) rtLatched = false;
@@ -176,9 +191,10 @@ void RemapButtons(XGamepad& p) {
     }
     if (hipStart) {
         o.Do(AIM);
-        const DWORD t = now - hipStart;
-        if (t >= kRaise && (rtLatched || t < kRaise + kTap)) o.Do(FIRE);
+        if (!hipReady && (AimStance() >= 1 || now - hipStart >= kRaiseMax)) hipReady = now;
+        if (hipReady && (rtLatched || now - hipReady < kTap)) o.Do(FIRE);
     }
+    if (!hipStart) hipReady = 0;
     if (latched & XB_RB) o.Do(ASHLEY);
     if ((latched & XB_A) && !aim && !knife) o.Do(ACTION);
     if ((latched & XB_B) && !aim) o.Do(RUN);

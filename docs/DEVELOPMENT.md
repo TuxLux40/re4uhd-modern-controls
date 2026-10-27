@@ -46,3 +46,15 @@ Every push to `main` runs the same build and tests and uploads the zip as a work
 
 `Bin32/RE4ModernControls.log` (rewritten on every start): load and hook results, config, and one line whenever the
 camera mode, Leon's routine bytes or the aim keys change.
+
+## Testing in the running game
+
+Two files in `Bin32` drive and read the game while it runs, for tests without a controller or a debugger:
+
+- **Scripted pad:** `RE4MC_input.txt`, one step per line: `<ms> <lx> <ly> <rx> <ry> <buttons hex> <lt> <rt>` (sticks
+  -1..1, triggers 0..255). It replaces the physical pad until the last step ends, and is deleted once read.
+- **Test kit:** write commands to another name, then rename it to `RE4MC_cmd.txt`. The mod takes it (renamed to
+  `RE4MC_cmd.done`), runs it and writes `RE4MC_cmd-out.txt`, ending with `done <n> ok <n> errors`. Commands:
+  `status` (Leon, Ashley, the game camera, the mod's camera and fade, the held keys), `peek <va> [bytes]`,
+  `f32 <va> [count]`, `u32 <va> [count]`, `ptr <va> <offset>...` (addresses in hex as Ghidra shows them) and
+  `log <text>`. Details in `src/testkit.cpp`.

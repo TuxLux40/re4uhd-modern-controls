@@ -97,6 +97,10 @@ constexpr uint32_t kFnPartnerHit = 0x0035EDF0;
 constexpr uint8_t kSigPartnerHit[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x20, 0xA1};
 
 // cModel draw, cdecl(cModel*): returns early when +0x158 * +0x154 is 0, else the alpha of every part is scaled by it.
+// cdecl void LookAt(CAMERA*) (0x0059E660): builds a camera's view matrix from its finished eye (+0xA4), target (+0xB0)
+// and fovy (+0xC0), after every smoothing and camera-switch blend. Called with kCamCtrl + cc::Camera for the shown view.
+constexpr uint32_t kFnLookAt = 0x0019E660;
+constexpr uint8_t kSigLookAt[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x58, 0xA1};
 constexpr uint32_t kFnModelDraw = 0x002EB450;
 constexpr uint8_t kSigModelDraw[] = {0x55, 0x8B, 0xEC, 0x56, 0x8B, 0x75, 0x08, 0xD9, 0x86, 0x58, 0x01, 0x00, 0x00};
 

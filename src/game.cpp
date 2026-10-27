@@ -84,10 +84,12 @@ static void DebugInput(XGamepad& pad) {
 }
 
 void RemapButtons(XGamepad& pad);
+void WeaponsPad(XGamepad& pad);
 void PromptsTick();
 void TransformPad(DWORD, XGamepad& pad) {
     DebugInput(pad);
     RemapButtons(pad);
+    WeaponsPad(pad);
     PromptsTick();
     FreeCameraPad(pad);
     static DWORD last = 0;
@@ -107,15 +109,49 @@ static uintptr_t Player() {
 typedef void(__fastcall* PFN_CamMove)(uintptr_t self, void* edx);
 static PFN_CamMove g_origCamMove = nullptr;
 
+static volatile DWORD g_camCtrlTick = 0;
+static volatile DWORD g_gameCamTick = 0;  // last frame one of the game's own cameras ran (cutscene, door, not 10/17)
+static volatile uint8_t g_prevMode = 10;  // the camera mode of the frame before this one
+float DiagStick();  // camera.cpp
+bool CameraControlRunning() { return GetTickCount() - g_camCtrlTick < 100; }  // the world is running (no menu)
+DWORD GameCameraTick() { return g_gameCamTick; }
+uint8_t PrevCamMode() { return g_prevMode; }
+
+void KeepShownCamera(uintptr_t ccObj);  // camera.cpp
+
 static void __fastcall HookCamMove(uintptr_t self, void* edx) {
     g_origCamMove(self, edx);
+    KeepShownCamera(self);
+    g_camCtrlTick = GetTickCount();
     static uint8_t lastMode = 0xFF;
     static uint32_t lastRno = 0xFFFFFFFF;
     static uint64_t lastKeys = ~0ull;
     const uint8_t mode = At<uint8_t>(self, cc::Mode);
+    g_prevMode = mode;
+    if (mode != 10 && mode != 17) g_gameCamTick = g_camCtrlTick;
     const uintptr_t plp = Player();
     const uint32_t rno = plp ? At<uint32_t>(plp, pl::RNo0) : 0;
     const uint64_t keys = *(const uint64_t*)Va(kKeyBtnOn) & (KEY_KAMAE | KEY_KAMAE_KNIFE);
+    // Diagnostics: every frame, a jump of the shown camera (turn, distance to Leon, height, field of view) in the
+    // gameplay camera, with whether the right stick was in use.
+    if (plp) {
+        static float pYaw = 0.0f, pDist = 0.0f, pUp = 0.0f, pFov = 0.0f;
+        static uint8_t pMode = 0xFF;
+        const float* e = (const float*)(self + cc::Point);
+        const float* lp = (const float*)(plp + pl::Pos);
+        const float yaw = atan2f(e[3] - e[0], e[5] - e[2]);
+        const float dist = sqrtf((e[0] - lp[0]) * (e[0] - lp[0]) + (e[2] - lp[2]) * (e[2] - lp[2])), up = e[1] - lp[1];
+        float dy = yaw - pYaw;
+        while (dy > 3.14159265f) dy -= 6.2831853f;
+        while (dy < -3.14159265f) dy += 6.2831853f;
+        if (mode == 10 && pMode == 10 &&
+            (fabsf(dy) > 0.14f || fabsf(dist - pDist) > 250.0f || fabsf(up - pUp) > 250.0f || fabsf(e[7] - pFov) > 3.0f))
+            Log("diag camjump: turn %+.1f deg, dist %.0f -> %.0f, height %.0f -> %.0f, fov %.1f -> %.1f | stick %.2f rno %08X "
+                "aimkeys %llX free %d",
+                dy * 57.3f, pDist, dist, pUp, up, pFov, e[7], DiagStick(), rno, (unsigned long long)keys,
+                FreeCameraActive() ? 1 : 0);
+        pYaw = yaw, pDist = dist, pUp = up, pFov = e[7], pMode = mode;
+    }
     if (mode == lastMode && rno == lastRno && keys == lastKeys) return;
     lastMode = mode;
     lastRno = rno;
@@ -153,11 +189,15 @@ bool HookAt(uint32_t rva, const uint8_t* sig, size_t n, void* detour, void** ori
 void InitButtonHooks();
 void InitPromptHooks();
 void InitQteHooks();
+void InitLegsHooks();
+void InitWeapons();
 void InitGameHooks() {
+    InitWeapons();
     InitButtonHooks();
     InitPromptHooks();
     InitQteHooks();
     InitCameraHooks();
+    InitLegsHooks();
     HookAt(kFnCamCtrlMove, kSigCamCtrlMove, sizeof(kSigCamCtrlMove), (void*)HookCamMove, (void**)&g_origCamMove,
            "CameraControl::move");
 }

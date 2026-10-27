@@ -2,6 +2,7 @@
 #include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static Config g_cfg;
 static FILETIME g_lastWrite = {};
@@ -51,8 +52,12 @@ void LoadConfig() {
     c.outerRing = ReadFloat(path, "Movement", "OuterRing", 0.85f);
     c.turnSpeed = ReadFloat(path, "Movement", "TurnSpeed", 515.0f) * kDeg;
     c.aimWalk = ReadFloat(path, "Aim", "Walk", 1.0f) != 0.0f;
+    c.aimLegs = ReadFloat(path, "Aim", "Legs", 1.0f) != 0.0f;
+    c.legsStride = ReadFloat(path, "Aim", "LegsStride", 1400.0f);
+    c.legsSwing = ReadFloat(path, "Aim", "LegsSwing", 0.45f);
+    c.legsKnee = ReadFloat(path, "Aim", "LegsKnee", 0.8f);
     c.aimWalkSpeed = ReadFloat(path, "Aim", "WalkSpeed", 1300.0f);
-    c.reloadSpeed = ReadFloat(path, "Aim", "ReloadSpeed", 3900.0f);
+    c.reloadSpeed = ReadFloat(path, "Aim", "ReloadSpeed", 1700.0f);
     c.crosshair = ReadFloat(path, "Aim", "Crosshair", 1.0f) != 0.0f;
     c.centeredAim = ReadFloat(path, "Aim", "CenteredAim", 1.0f) != 0.0f;
     c.centerDot = ReadFloat(path, "Aim", "CenterDot", 1.0f) != 0.0f;
@@ -77,8 +82,22 @@ void LoadConfig() {
     c.invertY = ReadFloat(path, "Camera", "InvertY", 0.0f) != 0.0f;
     c.fade = ReadFloat(path, "Camera", "Fade", 1.0f) != 0.0f;
     c.fadeNear = ReadFloat(path, "Camera", "FadeNear", 350.0f);
-    c.fadeFar = ReadFloat(path, "Camera", "FadeFar", 800.0f);
+    c.fadeFar = ReadFloat(path, "Camera", "FadeFar", 650.0f);
     c.fadeMin = ReadFloat(path, "Camera", "FadeMin", 0.3f);
+    c.dpadWeapons = ReadFloat(path, "Weapons", "DpadSelect", 1.0f) != 0.0f;
+    // The default lists are re4_tweaks' weapon hotkey cycles (dllmain/Settings.h), the last two joined on down.
+    static const char* const kDir[4] = {"Up", "Right", "Down", "Left"};
+    static const char* const kDefList[4] = {"35,37,33,39,3,41,42,55", "44,45,71,148", "16,46,47,48,52,83,53,109,54",
+                                            "1,2,14,8,9,10"};
+    for (int d = 0; d < 4; ++d) {
+        char list[256];
+        GetPrivateProfileStringA("Weapons", kDir[d], kDefList[d], list, sizeof(list), path);
+        c.wepCount[d] = 0;
+        for (char* t = strtok(list, ", \t"); t && c.wepCount[d] < 16; t = strtok(nullptr, ", \t")) {
+            const long id = strtol(t, nullptr, 10);
+            if (id > 0 && id < 0x10000) c.wepGroup[d][c.wepCount[d]++] = (uint16_t)id;
+        }
+    }
     if (c.fadeMin < 0.0f) c.fadeMin = 0.0f;
     if (c.fadeMin > 1.0f) c.fadeMin = 1.0f;
     if (c.fadeFar < c.fadeNear + 1.0f) c.fadeFar = c.fadeNear + 1.0f;

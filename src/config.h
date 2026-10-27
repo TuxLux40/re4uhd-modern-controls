@@ -14,7 +14,7 @@ struct Config {
     // [Aim]
     bool aimWalk = true;        // left stick walks while aiming, right stick aims
     float aimWalkSpeed = 1300;  // game units per second at full deflection
-    float reloadSpeed = 3900;   // the same while reloading without aiming (about Leon's running speed)
+    float reloadSpeed = 1700;   // the same while reloading without aiming (Leon's walk, with his walk animation)
     bool crosshair = true;      // crosshair at the laser's end point
     bool centerDot = true;      // a small dot in the middle of the screen outside of aiming too (with CenteredAim)
     bool hideActionPrompt = true;   // hide the door/item prompt (the action icon would show X; A acts)
@@ -25,6 +25,10 @@ struct Config {
     float aimShoulderBack = 750.0f;    // behind the shoulder spot along the view
     float aimShoulderHeight = 1550.0f; // shoulder spot above Leon's feet
     bool protectAshley = true;  // Leon's guns and knife don't damage Ashley
+    bool aimLegs = true;        // a walk cycle on Leon's legs while he steps and aims (legs.cpp)
+    float legsStride = 1400.0f; // game units per full gait cycle (two steps)
+    float legsSwing = 0.45f;    // thigh swing, radians each way at full stick
+    float legsKnee = 0.8f;      // knee bend through the swing, radians at full stick
     // [Camera]
     float defaultPitch = 0.0f;  // radians, + = looks further down than the game's camera (ini: degrees)
     float height = 0.0f;        // raises the camera, game units
@@ -39,8 +43,12 @@ struct Config {
     // [Camera] characters fade out when the camera gets close (distance eye to body, game units)
     bool fade = true;
     float fadeNear = 350.0f;  // below this: the most see-through step
-    float fadeFar = 800.0f;   // above this: fully visible; in between: one step halfway
+    float fadeFar = 650.0f;   // above this: fully visible; in between: one step halfway
     float fadeMin = 0.3f;     // visibility of the most see-through step (never fully hidden)
+    // [Weapons] d-pad quick select (weapons.cpp): each direction (up, right, down, left) cycles through its item ids
+    bool dpadWeapons = true;
+    uint16_t wepGroup[4][16] = {};
+    int wepCount[4] = {};
 };
 
 const Config& Cfg();
