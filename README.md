@@ -177,6 +177,9 @@ either way, so this table can grow.
 - [ ] Fire from the hip on the move with the walk on the legs, the same way as the reload (Leon only slows down for
   now); and quick turn in the RE3
   (2020) style
+- [ ] Seamless pickup like the newer games: Leon picks the item up without stopping
+- [ ] Pickup log: fine-tune the icons, their colours and the font weight
+- [ ] Camera reset on a right-stick click: the camera swings behind Leon, looking where he faces
 - [ ] Support for other game builds by finding the game's code instead of relying on fixed addresses
 
 ## Known issues
@@ -188,6 +191,13 @@ either way, so this table can grow.
 - Reloading on the move: Leon's legs walk, but where the reload ends and he walks or runs on, his legs still jump a
   little (mostly the right leg). Firing from the hip on the move: Leon slows down and glides, without the walk on his
   legs.
+- Quick pickup: Leon still stops for a moment when he picks something up, where the game would have shown its pickup
+  screen.
+- The legs on the move sometimes glitch: a bone of the leg pose turns invalid for a frame, the mod puts the last good
+  pose back, and the leg twitches.
+- Raising a gun, it often points at a different height first and then tilts down a little to the aim.
+- The camera can still jump in close in one frame when a wall or a stair edge suddenly comes between Leon and the
+  camera.
 - Walking while aiming: his legs step with a simple walk cycle of the mod's own (`Legs=0` turns it off and he glides);
   RE4 has no strafe animations.
 - Walking while aiming follows slopes and stops at walls; Ashley is kept on the ground behind you.
