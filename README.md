@@ -181,6 +181,15 @@ either way, so this table can grow.
 - [ ] Pickup log: fine-tune the icons, their colours and the font weight
 - [ ] Camera reset on a right-stick click: the camera swings behind Leon, looking where he faces
 - [ ] Support for other game builds by finding the game's code instead of relying on fixed addresses
+- [ ] **Enemies tuned for modern controls** (big project, once the rest is solid). RE4 was built around tank
+  controls; with free movement and camera, dodging enemies and lining up headshots gets much easier. Plan:
+  - shorter stuns, faster recovery
+  - throws and shots come sooner and lead the player: aimed where Leon is running or could dodge to, not at where he
+    stands
+  - more aggressive: less standing around in the open
+  - dodge the laser more often when it rests on their head (the game's own dodge, used more)
+  - scaled with the game's difficulty and its hidden dynamic difficulty, so Easy, Normal and Professional stay
+    distinct; switchable in the ini
 
 ## Known issues
 
