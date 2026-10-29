@@ -202,8 +202,6 @@ either way, so this table can grow.
   legs.
 - Quick pickup: Leon still stops for a moment when he picks something up, where the game would have shown its pickup
   screen.
-- The legs on the move sometimes glitch: a bone of the leg pose turns invalid for a frame, the mod puts the last good
-  pose back, and the leg twitches.
 - Raising a gun, it often points at a different height first and then tilts down a little to the aim.
 - The camera can still jump in close in one frame when a wall or a stair edge suddenly comes between Leon and the
   camera.
