@@ -69,6 +69,11 @@ constexpr uint32_t kAimRamp = 0x00866C1C;  // float, grows while the aim stick i
 constexpr uint32_t kAimV = 0x0087A7D8;
 constexpr uint32_t kAimVStart = 0x0087A7D4;
 constexpr uint32_t kAimVBlend = 0x0087A7DC;
+// The arm's up/down aim pose (0x0067CE00, thiscall on the aim pose controller 0x00C7A7E8, value -1..1): blends the
+// aim-up/aim-down motions. The game calls it from its aim routines only once the gun is raised (about 0.17 s in).
+constexpr uint32_t kArmPoseCtrl = 0x0087A7E8;
+constexpr uint32_t kFnArmPose = 0x0027CE00;
+constexpr uint8_t kSigArmPose[] = {0x55, 0x8B, 0xEC, 0x83, 0xEC, 0x08, 0x56, 0x8B, 0xF1, 0x8B, 0x0E, 0x85, 0xC9};
 // Bullet (0x00686C40), cdecl (owner, float* from, float* to, weapon id, int, float): the shot itself, used by
 // every attacker. Leon's gun routines (0x008FD410 and friends) pass the muzzle and muzzle + gun direction (plus
 // random spread); with mouse aim they first bend that direction toward the cursor (0x00683520).

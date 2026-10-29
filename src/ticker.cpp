@@ -1,9 +1,12 @@
 // Pickup ticker: with QuickPickup the everyday pickups come without their screen, so a few lines in small print on the
-// right, above the HUD, say what was taken (an icon, "Handgun Ammo x30" with the count in color), like the newer
-// Resident Evil games. Each line stays kShow ms and fades out over the last kFade ms (in over the first kIn); at most kLines at a time, the
+// right, above the HUD, say what was taken ("Handgun Ammo x30" and an icon after it), like the newer Resident Evil
+// games. Each line stays kShow ms and fades out over the last kFade ms (in over the first kIn); at most kLines at a time, the
 // newest at the bottom.
-// The game has no flat item icons (the case shows small 3D models, SS/item/idm*), so the icons are drawn here: a shape
-// per kind of item (cartridges, leaves, grenade, spray, egg, fish, gem, coin), colored after the item's name.
+// The game has no flat item icons (the case shows small 3D models, SS/item/idm*), so the icons are drawn here: white
+// silhouettes with a dark outline, one per kind of item (ammo boxes, grenades, herbs, spray, eggs, fish, gems, crowns,
+// rings, gold bars, other treasures, money). Color only where it tells something, mostly the game's own: the ammo boxes
+// (handgun red, shotgun green, rifle white, TMP blue...), the grenades (hand olive, flash blue, incendiary red), the
+// herb's leaves, the eggs, the gems and the spray's cross.
 // Drawn from the Present hook (crosshair.cpp): GDI renders the lines into a texture (text with a dark outline, a faint
 // dark band behind each line fading out to the left), one alpha-blended quad per line puts them on the back buffer.
 // All render states are saved in a state block and put back afterwards.
@@ -13,19 +16,24 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <initializer_list>
 
 static const DWORD kShow = 4000, kFade = 600, kIn = 250;
 static const int kLines = 5;
-static const COLORREF kCountColor = RGB(255, 84, 64);
+static const COLORREF kWhite = RGB(236, 234, 228), kDetail = RGB(150, 150, 146);
 
-enum Icon : uint8_t { IC_BOX, IC_AMMO, IC_HERB, IC_GRENADE, IC_SPRAY, IC_EGG, IC_FISH, IC_GEM, IC_COIN };
+// The ammo boxes, after the game's: only their shape and color blocks (no text or pictures, unreadable at this size).
+enum AmmoBox : uint8_t { AB_HANDGUN, AB_SHOTGUN, AB_RIFLE, AB_TMP, AB_MAGNUM, AB_HANDCANNON };
+
+enum Icon : uint8_t {
+    IC_BOX, IC_AMMO, IC_CRATE, IC_ARROWS, IC_GRENADE, IC_HERB, IC_SPRAY, IC_EGG, IC_FISH, IC_GEM, IC_CROWN, IC_RING, IC_BAR, IC_TREASURE, IC_COINS
+};
 
 struct Entry {
-    char text[2][64];  // drawn one after the other
-    uint8_t colored;   // which of the two is the count (drawn in kCountColor)
+    char text[64];
     Icon icon;
-    COLORREF col[3];   // the icon's colors (herbs: one per leaf)
-    uint8_t ncol;
+    COLORREF col;      // the icon's accent color (kWhite: none)
+    uint8_t kind;      // ammo boxes: which box (AmmoBox)
     DWORD t;
 };
 static Entry g_entries[kLines];
@@ -54,50 +62,47 @@ void TickerItem(uint32_t id, uint32_t num, uint8_t type, const char* name) {
     if (!Cfg().pickupTicker) return;
     Entry e = {};
     const bool money = type == 8 && id != 0x73 && id != 0x75;
-    if (money) {
-        snprintf(e.text[0], sizeof(e.text[0]), "%u", num);
-        snprintf(e.text[1], sizeof(e.text[1]), " PTAS");
-        e.colored = 0;
-    } else {
-        snprintf(e.text[0], sizeof(e.text[0]), "%s", name);
-        if (num > 1) snprintf(e.text[1], sizeof(e.text[1]), "  x%u", num);
-        e.colored = 1;
-    }
-    e.ncol = 1;
-    e.col[0] = RGB(170, 170, 170);
-    if (money) {
-        e.icon = IC_COIN, e.col[0] = RGB(226, 184, 64);
-    } else if (type == 2) {
-        e.icon = IC_AMMO, e.col[0] = RGB(206, 164, 64);
-    } else if (type == 3) {
+    if (money)
+        snprintf(e.text, sizeof(e.text), "%u PTAS", num);
+    else if (num > 1)
+        snprintf(e.text, sizeof(e.text), "%s  x%u", name, num);
+    else
+        snprintf(e.text, sizeof(e.text), "%s", name);
+    auto has = [&](const char* s) { return strstr(name, s) != nullptr; };
+    e.col = kWhite;
+    if (money || type == 8) {
+        e.icon = IC_COINS;
+    } else if (type == 2) {  // ammo: the box in the game's color for that kind (handgun red, shotgun green...)
+        e.icon = IC_AMMO;
+        if (has("Dart")) e.icon = IC_CRATE, e.col = RGB(98, 102, 62);
+        else if (has("Arrow") || has("Bolt")) e.icon = IC_ARROWS, e.col = RGB(206, 44, 44);
+        else if (has("Shotgun")) e.kind = AB_SHOTGUN, e.col = RGB(52, 142, 58);
+        else if (has("Rifle")) e.kind = AB_RIFLE, e.col = RGB(226, 220, 210);
+        else if (has("TMP") || has("Typewriter")) e.kind = AB_TMP, e.col = RGB(40, 70, 168);
+        else if (has("Magnum")) e.kind = AB_MAGNUM, e.col = RGB(34, 34, 38);
+        else if (has("Handcannon")) e.kind = AB_HANDCANNON, e.col = RGB(226, 176, 40);
+        else e.kind = AB_HANDGUN, e.col = RGB(190, 36, 36);
+    } else if (type == 3) {  // one can with a spoon lever for all three, colored as in the game
         e.icon = IC_GRENADE;
-        e.col[0] = strstr(name, "Incendiary") ? RGB(184, 54, 40) : strstr(name, "Flash") ? RGB(206, 206, 206)
-                                                                                        : RGB(84, 118, 64);
-    } else if (type == 5 || type == 12) {
-        e.icon = IC_GEM, e.col[0] = ColorFromName(name, RGB(222, 182, 62));
-    } else if (strstr(name, "Herb")) {
-        e.icon = IC_HERB, e.ncol = 0;
-        const COLORREF g = RGB(62, 172, 72), r = RGB(204, 52, 52), y = RGB(232, 202, 52);
-        const char* mix = strstr(name, "Mixed") ? strchr(name, '(') : nullptr;
-        if (mix) {
-            for (const char* c = mix; *c && *c != ')' && e.ncol < 3; ++c)
-                if (*c == 'G' || *c == 'R' || *c == 'Y') e.col[e.ncol++] = *c == 'G' ? g : *c == 'R' ? r : y;
-        } else {
-            const COLORREF c = strstr(name, "Red") ? r : strstr(name, "Yellow") ? y : g;
-            const int n = strstr(name, "X3") ? 3 : strstr(name, "X2") ? 2 : 1;
-            for (int i = 0; i < n; ++i) e.col[e.ncol++] = c;
-        }
-        if (!e.ncol) e.col[e.ncol++] = g;
-    } else if (strstr(name, "Spray")) {
-        e.icon = IC_SPRAY, e.col[0] = RGB(60, 170, 80);
-    } else if (strstr(name, "Egg")) {
+        e.col = has("Incendiary") ? RGB(170, 52, 44) : has("Flash") ? RGB(52, 76, 150) : RGB(86, 110, 66);
+    } else if (type == 5 || type == 12) {  // treasures
+        if (has("Crown") && !has("Jewel")) e.icon = IC_CROWN;
+        else if (has("Ruby") || has("Emerald") || has("Sapphire") || has("Spinel") || has("Velvet") ||
+                 has("Catseye") || has("Gem") || has("Jewel"))
+            e.icon = IC_GEM, e.col = ColorFromName(name, RGB(222, 182, 62));
+        else if (has("Pendant") || has("Bangle") || has("Ring")) e.icon = IC_RING, e.col = ColorFromName(name, kWhite);
+        else if (has("Gold Bar")) e.icon = IC_BAR;
+        else e.icon = IC_TREASURE;
+    } else if (has("Herb")) {  // only single herbs lie around; combined ones are made in the case
+        e.icon = IC_HERB;
+        e.col = has("Red") ? RGB(204, 52, 52) : has("Yellow") ? RGB(232, 202, 52) : RGB(62, 172, 72);
+    } else if (has("Spray")) {
+        e.icon = IC_SPRAY, e.col = RGB(60, 170, 80);
+    } else if (has("Egg")) {
         e.icon = IC_EGG;
-        e.col[0] = strstr(name, "Gold") ? RGB(232, 192, 60) : strstr(name, "Brown") ? RGB(170, 118, 76)
-                                                                                    : RGB(242, 236, 222);
-    } else if (strstr(name, "Bass") || strstr(name, "Fish")) {
-        e.icon = IC_FISH, e.col[0] = RGB(110, 134, 120);
-    } else if (type == 8) {
-        e.icon = IC_COIN, e.col[0] = RGB(226, 184, 64);
+        e.col = has("Gold") ? RGB(232, 192, 60) : has("Brown") ? RGB(170, 118, 76) : RGB(242, 236, 222);
+    } else if (has("Bass") || has("Fish")) {
+        e.icon = IC_FISH;
     }
     Lock();
     if (g_count == kLines) {
@@ -145,53 +150,137 @@ static void DrawIconShapes(HDC dc, int n, const Entry& e) {
         SetWorldTransform(dc, &x);
     };
     auto unrot = [&] { ModifyWorldTransform(dc, nullptr, MWT_IDENTITY); };
-    const COLORREF c = e.col[0];
+    const COLORREF c = e.col;
+    auto poly = [&](std::initializer_list<float> xy) {
+        POINT pt[16];
+        int k = 0;
+        for (auto it = xy.begin(); it != xy.end() && k < 16; it += 2) pt[k++] = {P(it[0]), P(it[1])};
+        Polygon(dc, pt, k);
+    };
+    auto line = [&](float x0, float y0, float x1, float y1) { MoveToEx(dc, P(x0), P(y0), nullptr), LineTo(dc, P(x1), P(y1)); };
     switch (e.icon) {
-    case IC_AMMO:  // two cartridges
-        for (int k = 0; k < 2; ++k) {
-            const float x0 = k ? 0.52f : 0.20f, x1 = x0 + 0.28f;
-            fill(RGB(186, 108, 60));
-            Ellipse(dc, P(x0), P(0.10f), P(x1), P(0.62f));
-            fill(c);
-            Rectangle(dc, P(x0), P(0.38f), P(x1), P(0.90f));
-            fill(Shade(c, 70));
-            Rectangle(dc, P(x0 - 0.02f), P(0.82f), P(x1 + 0.02f), P(0.92f));
+    case IC_AMMO: {  // a flat cardboard box from above its front corner, with the color blocks of the game's box
+        const COLORREF red = RGB(196, 36, 36), white = RGB(240, 236, 228), yellow = RGB(232, 196, 52);
+        auto box = [&](COLORREF front, COLORREF top, COLORREF side) {
+            fill(top);
+            poly({0.04f, 0.40f, 0.20f, 0.18f, 0.96f, 0.18f, 0.80f, 0.40f});
+            fill(side);
+            poly({0.80f, 0.40f, 0.96f, 0.18f, 0.96f, 0.64f, 0.80f, 0.86f});
+            fill(front);
+            Rectangle(dc, P(0.04f), P(0.40f), P(0.80f), P(0.86f));
+        };
+        auto block = [&](COLORREF col, float x0, float y0, float x1, float y1) {  // flat, no outline
+            fill(col);
+            SelectObject(dc, GetStockObject(NULL_PEN));
+            Rectangle(dc, P(x0), P(y0), P(x1), P(y1));
+            SelectObject(dc, pen);
+        };
+        switch (e.kind) {
+        case AB_HANDGUN:  // red, a white title strip along the top of the front and the lid
+            box(c, Shade(c, 125), Shade(c, 70));
+            block(white, 0.07f, 0.45f, 0.77f, 0.53f);
+            block(white, 0.07f, 0.76f, 0.77f, 0.80f);
+            break;
+        case AB_SHOTGUN:  // green with a yellow frame, a dark round emblem on the left
+            box(yellow, Shade(c, 125), Shade(c, 70));
+            block(c, 0.08f, 0.44f, 0.76f, 0.82f);
+            fill(RGB(24, 30, 24));
+            Ellipse(dc, P(0.12f), P(0.46f), P(0.38f), P(0.80f));
+            fill(yellow);
+            Ellipse(dc, P(0.19f), P(0.55f), P(0.31f), P(0.71f));
+            block(yellow, 0.44f, 0.52f, 0.72f, 0.58f);
+            break;
+        case AB_RIFLE:  // off-white, red lettering across, a red edge on the left
+            box(c, Shade(c, 110), Shade(c, 80));
+            block(red, 0.07f, 0.43f, 0.13f, 0.83f);
+            block(red, 0.18f, 0.50f, 0.74f, 0.56f);
+            block(red, 0.18f, 0.64f, 0.62f, 0.68f);
+            break;
+        case AB_TMP:  // blue, a light picture panel on the right half
+            box(c, Shade(c, 135), Shade(c, 70));
+            block(RGB(210, 214, 222), 0.46f, 0.44f, 0.77f, 0.82f);
+            block(white, 0.08f, 0.50f, 0.40f, 0.58f);
+            break;
+        case AB_MAGNUM:  // black, a red title block top left and a red stripe along the bottom
+            box(c, RGB(60, 60, 64), red);
+            block(red, 0.08f, 0.44f, 0.52f, 0.58f);
+            block(red, 0.36f, 0.74f, 0.77f, 0.81f);
+            break;
+        case AB_HANDCANNON:  // yellow, a red mark on the right
+            box(c, Shade(c, 120), Shade(c, 75));
+            block(red, 0.50f, 0.48f, 0.72f, 0.68f);
+            block(RGB(120, 70, 20), 0.08f, 0.48f, 0.42f, 0.54f);
+            break;
         }
         break;
-    case IC_HERB: {  // one leaf per herb, fanned out
-        static const float fan[3][3] = {{0, 0, 0}, {-24, 24, 0}, {-36, 0, 36}};
-        const int k = e.ncol;
+    }
+    case IC_CRATE:  // mine darts: an olive crate with two latches
+        fill(Shade(c, 125));
+        poly({0.06f, 0.42f, 0.22f, 0.22f, 0.94f, 0.22f, 0.78f, 0.42f});
+        fill(Shade(c, 70));
+        poly({0.78f, 0.42f, 0.94f, 0.22f, 0.94f, 0.68f, 0.78f, 0.90f});
+        fill(c);
+        Rectangle(dc, P(0.06f), P(0.42f), P(0.78f), P(0.90f));
+        line(0.06f, 0.54f, 0.78f, 0.54f);
+        fill(kDetail);
+        Rectangle(dc, P(0.18f), P(0.48f), P(0.28f), P(0.62f));
+        Rectangle(dc, P(0.56f), P(0.48f), P(0.66f), P(0.62f));
+        break;
+    case IC_ARROWS:  // a bundle of three arrows with red fletching, tied in the middle (grey shafts: black ones
+                     // vanished on the dark band, and narrow fletching was all outline)
+        rot(40, 0.5f, 0.5f);
+        for (float o : {-0.15f, 0.0f, 0.15f}) {
+            fill(c);
+            poly({0.50f + o, 0.58f, 0.36f + o, 0.98f, 0.50f + o, 0.86f, 0.64f + o, 0.98f});
+            fill(kDetail);
+            Rectangle(dc, P(0.46f + o), P(0.12f), P(0.54f + o), P(0.80f));
+            fill(kWhite);
+            poly({0.50f + o, 0.00f, 0.59f + o, 0.18f, 0.41f + o, 0.18f});
+        }
+        fill(RGB(60, 60, 64));
+        Rectangle(dc, P(0.28f), P(0.42f), P(0.72f), P(0.50f));
+        unrot();
+        break;
+    case IC_GRENADE:  // a can with a spoon lever and the pin's ring
+        fill(kDetail);
+        Rectangle(dc, P(0.36f), P(0.10f), P(0.60f), P(0.24f));     // the fuze
+        Ellipse(dc, P(0.22f), P(0.04f), P(0.38f), P(0.18f));       // the ring
+        poly({0.58f, 0.12f, 0.74f, 0.18f, 0.70f, 0.70f, 0.64f, 0.70f, 0.66f, 0.22f, 0.58f, 0.20f});  // the spoon
+        fill(c);
+        RoundRect(dc, P(0.24f), P(0.22f), P(0.66f), P(0.94f), P(0.14f), P(0.14f));
+        fill(Shade(c, 180));  // the white print on the can
+        SelectObject(dc, GetStockObject(NULL_PEN));
+        for (int k = 0; k < 3; ++k) Rectangle(dc, P(0.31f), P(0.40f + k * 0.08f), P(0.59f - k * 0.04f), P(0.44f + k * 0.08f));
+        SelectObject(dc, pen);
+        break;
+    case IC_HERB: {  // a sprig: stem and three leaves in the herb's color, kept inside the square (the side leaves
+                     // were cut off at its edge)
         HPEN stem = CreatePen(PS_SOLID, w * 2, RGB(70, 96, 40));
         HGDIOBJ op = SelectObject(dc, stem);
-        MoveToEx(dc, P(0.5f), P(0.94f), nullptr), LineTo(dc, P(0.5f), P(0.66f));
+        line(0.5f, 0.98f, 0.5f, 0.70f);
         SelectObject(dc, op);
         DeleteObject(stem);
-        for (int i = 0; i < k; ++i) {
-            rot(fan[k - 1][i], 0.5f, 0.70f);
-            fill(e.col[i]);
-            Ellipse(dc, P(0.36f), P(0.06f), P(0.64f), P(0.74f));
-            MoveToEx(dc, P(0.5f), P(0.16f), nullptr), LineTo(dc, P(0.5f), P(0.68f));
+        for (float deg : {-38.0f, 38.0f, 0.0f}) {
+            rot(deg, 0.5f, 0.74f);
+            fill(c);
+            Ellipse(dc, P(0.39f), P(0.18f), P(0.61f), P(0.76f));
+            line(0.5f, 0.28f, 0.5f, 0.70f);
             unrot();
         }
         break;
     }
-    case IC_GRENADE:
-        fill(Shade(c, 80));
-        Rectangle(dc, P(0.40f), P(0.14f), P(0.60f), P(0.32f));
-        Ellipse(dc, P(0.58f), P(0.10f), P(0.76f), P(0.26f));  // the pin's ring
-        fill(c);
-        Ellipse(dc, P(0.20f), P(0.26f), P(0.80f), P(0.92f));
-        MoveToEx(dc, P(0.30f), P(0.59f), nullptr), LineTo(dc, P(0.70f), P(0.59f));
-        break;
-    case IC_SPRAY:
-        fill(c);
-        Rectangle(dc, P(0.40f), P(0.08f), P(0.60f), P(0.26f));
-        fill(RGB(228, 228, 224));
-        RoundRect(dc, P(0.28f), P(0.22f), P(0.72f), P(0.94f), P(0.12f), P(0.12f));
-        fill(c);
+    case IC_SPRAY:  // a spray can: domed top, cap with its nozzle, white body, colored cross
+        fill(kDetail);
+        Rectangle(dc, P(0.42f), P(0.04f), P(0.58f), P(0.18f));
+        Rectangle(dc, P(0.56f), P(0.07f), P(0.66f), P(0.11f));
+        fill(kWhite);
+        Ellipse(dc, P(0.28f), P(0.13f), P(0.72f), P(0.33f));
+        Rectangle(dc, P(0.28f), P(0.23f), P(0.72f), P(0.94f));
         SelectObject(dc, GetStockObject(NULL_PEN));
-        Rectangle(dc, P(0.45f), P(0.42f), P(0.55f), P(0.76f));
-        Rectangle(dc, P(0.33f), P(0.54f), P(0.67f), P(0.64f));
+        Rectangle(dc, P(0.29f), P(0.20f), P(0.71f), P(0.26f));  // hides the dome's lower edge
+        fill(c);
+        Rectangle(dc, P(0.45f), P(0.44f), P(0.55f), P(0.78f));
+        Rectangle(dc, P(0.33f), P(0.56f), P(0.67f), P(0.66f));
         SelectObject(dc, pen);
         break;
     case IC_EGG:
@@ -202,44 +291,67 @@ static void DrawIconShapes(HDC dc, int n, const Entry& e) {
         Ellipse(dc, P(0.34f), P(0.24f), P(0.46f), P(0.42f));
         SelectObject(dc, pen);
         break;
-    case IC_FISH: {
-        fill(Shade(c, 85));
-        const POINT tail[3] = {{P(0.66f), P(0.50f)}, {P(0.94f), P(0.28f)}, {P(0.94f), P(0.72f)}};
-        Polygon(dc, tail, 3);
-        fill(c);
-        Ellipse(dc, P(0.06f), P(0.30f), P(0.74f), P(0.70f));
+    case IC_FISH:  // a bass from the side, filling the square
+        fill(kWhite);
+        poly({0.70f, 0.50f, 0.98f, 0.20f, 0.98f, 0.80f});
+        poly({0.30f, 0.26f, 0.44f, 0.10f, 0.58f, 0.26f});  // the dorsal fin
+        Ellipse(dc, P(0.02f), P(0.22f), P(0.80f), P(0.78f));
+        line(0.26f, 0.28f, 0.26f, 0.72f);
         fill(RGB(18, 18, 18));
-        Ellipse(dc, P(0.18f), P(0.42f), P(0.25f), P(0.49f));
+        Ellipse(dc, P(0.11f), P(0.40f), P(0.19f), P(0.48f));
         break;
-    }
-    case IC_GEM: {
+    case IC_GEM:
         fill(c);
-        const POINT gem[5] = {{P(0.28f), P(0.16f)}, {P(0.72f), P(0.16f)}, {P(0.92f), P(0.40f)},
-                              {P(0.50f), P(0.92f)}, {P(0.08f), P(0.40f)}};
-        Polygon(dc, gem, 5);
+        poly({0.28f, 0.16f, 0.72f, 0.16f, 0.92f, 0.40f, 0.50f, 0.92f, 0.08f, 0.40f});
         fill(Shade(c, 130));
-        const POINT top[4] = {{P(0.28f), P(0.16f)}, {P(0.72f), P(0.16f)}, {P(0.62f), P(0.40f)}, {P(0.38f), P(0.40f)}};
-        Polygon(dc, top, 4);
-        MoveToEx(dc, P(0.08f), P(0.40f), nullptr), LineTo(dc, P(0.92f), P(0.40f));
-        MoveToEx(dc, P(0.38f), P(0.40f), nullptr), LineTo(dc, P(0.50f), P(0.92f));
-        MoveToEx(dc, P(0.62f), P(0.40f), nullptr), LineTo(dc, P(0.50f), P(0.92f));
+        poly({0.28f, 0.16f, 0.72f, 0.16f, 0.62f, 0.40f, 0.38f, 0.40f});
+        line(0.08f, 0.40f, 0.92f, 0.40f);
+        line(0.38f, 0.40f, 0.50f, 0.92f);
+        line(0.62f, 0.40f, 0.50f, 0.92f);
         break;
-    }
-    case IC_COIN:
-        fill(c);
-        Ellipse(dc, P(0.10f), P(0.10f), P(0.90f), P(0.90f));
-        fill(Shade(c, 80));
-        Ellipse(dc, P(0.24f), P(0.24f), P(0.76f), P(0.76f));
-        fill(c);
-        SelectObject(dc, GetStockObject(NULL_PEN));
-        Rectangle(dc, P(0.42f), P(0.33f), P(0.50f), P(0.68f));
-        Ellipse(dc, P(0.42f), P(0.33f), P(0.62f), P(0.53f));
-        SelectObject(dc, pen);
+    case IC_CROWN:
+        fill(kWhite);
+        poly({0.10f, 0.78f, 0.08f, 0.28f, 0.30f, 0.52f, 0.50f, 0.18f, 0.70f, 0.52f, 0.92f, 0.28f, 0.90f, 0.78f});
+        Rectangle(dc, P(0.10f), P(0.72f), P(0.90f), P(0.88f));
+        fill(kDetail);
+        for (float x : {0.08f, 0.50f, 0.92f}) Ellipse(dc, P(x - 0.06f), P(x == 0.50f ? 0.10f : 0.20f), P(x + 0.06f), P(x == 0.50f ? 0.22f : 0.32f));
         break;
-    default:
-        fill(c);
+    case IC_RING:  // ring with a stone on top
+        fill(kWhite);
+        Ellipse(dc, P(0.16f), P(0.30f), P(0.84f), P(0.94f));
+        fill(RGB(255, 0, 255));  // the key color: punches the hole
+        Ellipse(dc, P(0.30f), P(0.44f), P(0.70f), P(0.80f));
+        fill(c == kWhite ? kDetail : c);
+        poly({0.38f, 0.12f, 0.62f, 0.12f, 0.70f, 0.24f, 0.50f, 0.40f, 0.30f, 0.24f});
+        break;
+    case IC_BAR:  // gold bar: top face and front
+        fill(kWhite);
+        poly({0.20f, 0.36f, 0.80f, 0.36f, 0.94f, 0.80f, 0.06f, 0.80f});
+        fill(kDetail);
+        poly({0.26f, 0.42f, 0.74f, 0.42f, 0.80f, 0.58f, 0.20f, 0.58f});
+        break;
+    case IC_TREASURE:  // goblet
+        fill(kWhite);
+        poly({0.20f, 0.08f, 0.80f, 0.08f, 0.70f, 0.40f, 0.30f, 0.40f});
+        Ellipse(dc, P(0.30f), P(0.30f), P(0.70f), P(0.52f));
+        Rectangle(dc, P(0.46f), P(0.48f), P(0.54f), P(0.78f));
+        poly({0.38f, 0.76f, 0.62f, 0.76f, 0.74f, 0.92f, 0.26f, 0.92f});
+        fill(kDetail);
+        Rectangle(dc, P(0.24f), P(0.16f), P(0.76f), P(0.22f));
+        break;
+    case IC_COINS:  // a stack of coins
+        fill(kWhite);
+        for (int k = 0; k < 3; ++k) {
+            const float y = 0.62f - k * 0.20f;
+            RoundRect(dc, P(0.14f), P(y), P(0.86f), P(y + 0.30f), P(0.72f), P(0.22f));
+        }
+        fill(kDetail);
+        Ellipse(dc, P(0.30f), P(0.24f), P(0.70f), P(0.34f));
+        break;
+    default:  // a box
+        fill(kWhite);
         RoundRect(dc, P(0.16f), P(0.24f), P(0.84f), P(0.84f), P(0.14f), P(0.14f));
-        MoveToEx(dc, P(0.16f), P(0.44f), nullptr), LineTo(dc, P(0.84f), P(0.44f));
+        line(0.16f, 0.44f, 0.84f, 0.44f);
         break;
     }
     DeleteObject(SelectObject(dc, oldBrush));
@@ -326,20 +438,19 @@ static bool Render(IDirect3DDevice9* dev, UINT lineH) {
     SetBkMode(dc, TRANSPARENT);
     const LONG pad = (LONG)(lineH * 0.3f), fade = pad * 4;
     const int icon = (int)(lineH * 0.92f);
-    const LONG textX = fade + icon + (LONG)(lineH * 0.25f);
+    // Text first, the icon after it on the right (as in RE Requiem), all in white.
+    LONG iconX[kLines] = {};
+    SetTextColor(dc, RGB(255, 255, 255));
     for (int i = 0; i < g_count; ++i) {
-        LONG x = textX;
-        for (int k = 0; k < 2; ++k) {
-            const char* s = g_entries[i].text[k];
-            const int len = (int)strlen(s);
-            if (!len) continue;
-            SIZE sz = {};
-            GetTextExtentPoint32A(dc, s, len, &sz);
-            SetTextColor(dc, k == g_entries[i].colored ? kCountColor : RGB(255, 255, 255));
-            TextOutA(dc, x, (int)(i * lineH + (lineH - sz.cy) / 2), s, len);
-            x += sz.cx;
-        }
-        g_width[i] = x + pad < (LONG)tw ? x + pad : (LONG)tw;
+        const char* s = g_entries[i].text;
+        const int len = (int)strlen(s);
+        SIZE sz = {};
+        GetTextExtentPoint32A(dc, s, len, &sz);
+        TextOutA(dc, fade, (int)(i * lineH + (lineH - sz.cy) / 2), s, len);
+        iconX[i] = fade + sz.cx + (LONG)(lineH * 0.25f);
+        if (iconX[i] + icon > (LONG)tw) iconX[i] = (LONG)tw - icon;
+        const LONG x = iconX[i] + icon + pad;
+        g_width[i] = x < (LONG)tw ? x : (LONG)tw;
     }
     GdiFlush();
 
@@ -381,7 +492,7 @@ static bool Render(IDirect3DDevice9* dev, UINT lineH) {
             }
         }
         for (int i = 0; i < g_count; ++i)
-            PutIcon((uint32_t*)lr.pBits, lr.Pitch / 4, fade, (int)(i * lineH + (lineH - icon) / 2), icon, g_entries[i]);
+            PutIcon((uint32_t*)lr.pBits, lr.Pitch / 4, iconX[i], (int)(i * lineH + (lineH - icon) / 2), icon, g_entries[i]);
         g_tex->UnlockRect(0);
     }
     SelectObject(dc, oldFont);
@@ -480,8 +591,9 @@ void DrawTicker(IDirect3DDevice9* dev) {
     dev->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
 
     if (SUCCEEDED(dev->BeginScene())) {
-        // On the right, above the HUD (life gauge and ammo in the lower right); the newest line at the bottom.
-        const float right = desc.Width - desc.Height * 0.05f, bottom = desc.Height * 0.74f;
+        // On the right, above the HUD (life gauge and ammo in the lower right); the newest line at the bottom. High enough
+        // to clear Ashley's gauge too, which sits above Leon's while she is with him (0.74 covered it).
+        const float right = desc.Width - desc.Height * 0.05f, bottom = desc.Height * 0.62f;
         for (int i = 0; i < g_count; ++i) {
             const DWORD age = now - g_entries[i].t, left_ms = kShow - age;
             DWORD a = left_ms >= kFade ? 255 : 255 * left_ms / kFade;

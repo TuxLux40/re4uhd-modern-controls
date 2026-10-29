@@ -225,6 +225,18 @@ constexpr float kWalkBlend = 0.15f;
 float g_walkLower[kLowerLast + 1][9];  // this frame's walk pose of the lower body (position, rotation, scale)
 uint32_t g_walkFrame = 0, g_walkPosed = ~0u;
 
+// Each bone remembers where it is in each curve of the motion it plays: key cursors for rotation, position and scale,
+// one set for the body slot (Bone +0x19C) and one for an aim layer (+0x1AE), 3 x u16 each (0x0065ED70). The key
+// search (0x00660E00) starts at the cursor and only wraps once it runs past the curve's last key. The walk copy is a
+// body slot motion, so posing it moved the body slot's cursors to the walk's keys; the next frame the reload's curves
+// started their search there, past the end of a curve with fewer keys, read key times out of the value data, found
+// no pair of keys around the frame and divided by zero: NaN in a bone's rotation (log 2026-10-28: "bone 21 had NaN
+// (mask 038)", all 14 times 0.2-0.6 s into a reload glide; 12 in the rotation, 2 in the scale, mask 1C0).
+// So the walk keeps cursors of its own, and the game's are put back after it.
+constexpr uint32_t kBoneKeys = 0x19C, kBoneKeysSize = 0x24;
+uint8_t g_walkKeys[kMaxBones][kBoneKeysSize];
+bool g_walkKeysFresh = true;  // a new copy: its cursors start at 0, as the game's do when it starts a motion
+
 // The copy points into the game's motion data (MOTION_INFO +0x00 fcv data, +0x04 hermite data, +0x34 joint numbers,
 // +0x38 joint kinds, +0xA8 sequence). The game reuses those buffers: on 2026-10-27, after aiming another weapon, the
 // walk's data held garbage, Leon's root came out at -2.2e38 and the game's angle wrap (0x00658360) looped forever. So
@@ -259,6 +271,7 @@ void WalkSnapshot(uintptr_t pl) {
     if (g_walkModel != pl) Log("legs: walk copied (frame %.1f speed %.2f)", At<float>((uintptr_t)g_walkMi, kMiFrame),
                                At<float>((uintptr_t)g_walkMi, kMiSpeed));
     g_walkModel = pl;
+    g_walkKeysFresh = true;
 }
 
 bool WalkStart(uintptr_t pl) {
@@ -294,16 +307,26 @@ void WalkPlan(uintptr_t pl) {
 void ApplyWalk(uintptr_t pl) {
     uintptr_t bones[kMaxBones];
     int n = 0;
-    for (uintptr_t b = At<uintptr_t>(pl, kFirstBone); b >= 0x10000 && n < kMaxBones && Readable((void*)b, 0x100);
+    for (uintptr_t b = At<uintptr_t>(pl, kFirstBone); b >= 0x10000 && n < kMaxBones && Readable((void*)b, 0x1D8);
          b = At<uintptr_t>(b, kNextBone))
         bones[n++] = b;
     if (n <= kLowerLast || !(At<float>(bones[19], kBonePos + 4) < -300.0f)) return;
     if (g_walkPosed != g_walkFrame) {
         static float saved[kMaxBones][9];
-        for (int i = 0; i < n; ++i) memcpy(saved[i], (void*)(bones[i] + kBonePos), sizeof saved[i]);
+        static uint8_t savedKeys[kMaxBones][kBoneKeysSize];
+        if (g_walkKeysFresh) memset(g_walkKeys, 0, sizeof g_walkKeys), g_walkKeysFresh = false;
+        for (int i = 0; i < n; ++i) {
+            memcpy(saved[i], (void*)(bones[i] + kBonePos), sizeof saved[i]);
+            memcpy(savedKeys[i], (void*)(bones[i] + kBoneKeys), kBoneKeysSize);
+            memcpy((void*)(bones[i] + kBoneKeys), g_walkKeys[i], kBoneKeysSize);
+        }
         g_origPose(pl, (uintptr_t)g_walkMi, 0);
         for (int i = kLowerFirst; i <= kLowerLast; ++i) memcpy(g_walkLower[i], (void*)(bones[i] + kBonePos), sizeof g_walkLower[i]);
-        for (int i = 0; i < n; ++i) memcpy((void*)(bones[i] + kBonePos), saved[i], sizeof saved[i]);
+        for (int i = 0; i < n; ++i) {
+            memcpy((void*)(bones[i] + kBonePos), saved[i], sizeof saved[i]);
+            memcpy(g_walkKeys[i], (void*)(bones[i] + kBoneKeys), kBoneKeysSize);
+            memcpy((void*)(bones[i] + kBoneKeys), savedKeys[i], kBoneKeysSize);
+        }
         g_walkPosed = g_walkFrame;
         static DWORD s_log = 0;
         if (GetTickCount() - s_log > 2000)

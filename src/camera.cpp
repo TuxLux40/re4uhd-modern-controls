@@ -207,6 +207,23 @@ static float FreeRoom(const float* pivot, const float* eye) {
     return full > 1.0f ? Clamp((len - 150.0f) / full, 0.0f, 1.0f) : 1.0f;
 }
 
+// The pivot sits beside Leon (over his right shoulder). Running along a wall on his right put it inside the wall, the
+// line to the eye then hit at once and the camera jumped in (log: "wall allows 0.00" while running). So the pivot is
+// first traced out from Leon's middle at the same height, and stays 150 units off whatever is in the way.
+static float g_pivotCut = 0.0f;  // diagnostics: how far the last pivot was pulled in
+static void SafePivot(const float* pos, float* pivot) {
+    const float from[3] = {pos[0], pivot[1], pos[2]};
+    const float dx = pivot[0] - from[0], dz = pivot[2] - from[2];
+    const float len = sqrtf(dx * dx + dz * dz);
+    g_pivotCut = 0.0f;
+    float hit[3];
+    if (len < 1.0f || !Trace(from, pivot, hit, kTraceCamA, kTraceCamB)) return;
+    const float hx = hit[0] - from[0], hz = hit[2] - from[2];
+    const float keep = Clamp(sqrtf(hx * hx + hz * hz) - 150.0f, 0.0f, len) / len;
+    g_pivotCut = len * (1.0f - keep);
+    pivot[0] = from[0] + dx * keep, pivot[2] = from[2] + dz * keep;
+}
+
 // Diagnostics: the wall pull-in (share of the camera distance kept), logged when it crosses 0.95 / 0.6 / 0.3 or the
 // wall's share jumps by more than 0.3 from one frame to the next.
 static void DiagRoom(const char* which, float room, float want) {
@@ -216,7 +233,8 @@ static void DiagRoom(const char* which, float room, float want) {
     const int band = room >= 0.95f ? 3 : room >= 0.6f ? 2 : room >= 0.3f ? 1 : 0;
     const bool jump = fabsf(want - s_want[k]) > 0.3f;
     if (band != s_band[k] || jump)
-        Log("diag wall %s: room %.2f (wall allows %.2f, was %.2f)%s", which, room, want, s_want[k], jump ? " JUMP" : "");
+        Log("diag wall %s: room %.2f (wall allows %.2f, was %.2f) pivot in %.0f%s", which, room, want, s_want[k],
+            g_pivotCut, jump ? " JUMP" : "");
     s_band[k] = band, s_want[k] = want;
 }
 
@@ -579,6 +597,7 @@ static void __fastcall HookQfpsMoveBody(uintptr_t self, void* edx) {
     build(g_room < 0.0f ? 1.0f : Clamp(g_room / 0.9f, 0.0f, 1.0f));
     // Walls: ease the camera in and out instead of jumping to the wall. In fast enough to barely show the wall's
     // far side, out slowly so walking past a pillar or out of a corridor doesn't throw the view around.
+    SafePivot(pos, shoulder);
     const float want = FreeRoom(shoulder, eye);
     if (g_room < 0.0f) {
         g_room = want;
@@ -779,6 +798,7 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     place(yaw, pitch);
     if (aimEye[1] < pos[1] + 250.0f) aimEye[1] = pos[1] + 250.0f;  // not into the floor
     // Walls: pull the camera toward the shoulder, in quickly, out slowly.
+    SafePivot(pos, shoulder);
     const float want = FreeRoom(shoulder, aimEye);
     if (g_aimRoom < 0.0f) g_aimRoom = want;
     else g_aimRoom += (want - g_aimRoom) * (1.0f - expf(-dt / (want < g_aimRoom ? 0.05f : 0.4f)));

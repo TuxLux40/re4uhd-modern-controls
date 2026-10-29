@@ -22,6 +22,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+void TickerItem(uint32_t id, uint32_t num, uint8_t type, const char* name);
+
 using namespace re4;
 
 void CameraStatus(char* out, size_t n);  // camera.cpp
@@ -119,6 +121,13 @@ void Run(char* line) {
             k += snprintf(b + k, sizeof b - k, " -> %08X", a);
         }
         Out(true, cmd, "%s", b);
+    } else if (!strcmp(cmd, "ticker") && argc >= 4) {
+        // A pickup-log line without picking anything up (to check the icons): ticker <type> <count> <name...>
+        char name[64] = "";
+        for (int i = 3; i < argc; ++i)
+            snprintf(name + strlen(name), sizeof name - strlen(name), "%s%s", i > 3 ? " " : "", argv[i]);
+        TickerItem(0, strtoul(argv[2], nullptr, 10), (uint8_t)strtoul(argv[1], nullptr, 10), name);
+        Out(true, cmd, "%s", name);
     } else {
         Out(false, cmd, "unknown command or missing argument");
     }

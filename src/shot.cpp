@@ -320,11 +320,22 @@ static float g_lastAnchor = 0.0f;
 static bool g_haveAnchor = false;
 static float g_setPitch = 0.0f;      // the vertical aim to swing to when the aim starts (radians)
 static volatile DWORD g_setPitchUntil = 0;
+typedef void(__thiscall* PFN_ArmPose)(uintptr_t ctrl, float v);
+static PFN_ArmPose g_armPose = nullptr;  // null: unexpected code there, left alone
 // Aim start: Leon swings his vertical aim to the view's (applied on the sway calls of the next 0.3 s, after the game's own
-// reset of the aim at its start).
+// reset of the aim at its start). The game's aim routines (and with them the sway) only start once the gun is raised,
+// about 0.17 s in; until then the arm kept its level pose, so the gun came up level and then tilted to the view's
+// height (log 2026-10-29: first sway call 167 ms after the aim start, pose value 0.0). So the pose is set here at once
+// as well, and the gun comes up at the view's height.
 void SetAimPitch(float rad) {
     g_setPitch = fmaxf(-1.4f, fminf(1.4f, rad));
     g_setPitchUntil = GetTickCount() + 300;
+    const float v = g_setPitch * 0.63661977f;
+    *(float*)Va(kAimV) = *(float*)Va(kAimVStart) = v;
+    const uintptr_t ctrl = Va(kArmPoseCtrl);
+    const uintptr_t model = Readable((void*)ctrl, 8) ? *(uintptr_t*)ctrl : 0;
+    if (g_armPose && model >= 0x10000 && Readable((void*)(model + 0x2A8), 4) && *(uintptr_t*)(model + 0x2A8))
+        g_armPose(ctrl, v);
 }
 // The sway anchor came back after a gap (a weapon switch drops it for a few frames): its value then is the game's
 // reset, not a stick move, so the camera can't see it as a jump.
@@ -354,8 +365,13 @@ static void __cdecl HookSway(uintptr_t pl, uint32_t mode, float* v, float* side)
     }
     if (!g_haveAnchor) g_anchorBack = true;
     if ((int)(g_setPitchUntil - GetTickCount()) > 0) {
+        // The arm's pose follows kAimVStart, eased toward the aim by kAimVBlend: set both, so it doesn't ease over.
+        float* start = (float*)Va(kAimVStart);
+        if (fabsf(*start * 90.0f - g_setPitch * 57.3f) > 1.0f)
+            Log("diag aim pose: start %.1f deg -> %.1f, blend %.2f", *start * 90.0f, g_setPitch * 57.3f,
+                *(float*)Va(kAimVBlend));
         *(float*)(sw + 0x28) = g_setPitch;
-        *(float*)Va(kAimV) = g_setPitch * 0.63661977f;
+        *(float*)Va(kAimV) = *start = g_setPitch * 0.63661977f;
         g_lastAnchor = g_setPitch, g_haveAnchor = true;
     }
     const float a = At<float>(sw, 0x28);
@@ -398,5 +414,9 @@ void InitShotHook() {
          "laser line");
     Hook(kFnBullet, kSigBullet, sizeof(kSigBullet), (void*)HookBullet, (void**)&g_origBullet, "bullet");
     Hook(kFnSway, kSigSway, sizeof(kSigSway), (void*)HookSway, (void**)&g_origSway, "aim sway");
+    if (SafeEqual((void*)Va(kFnArmPose), kSigArmPose, sizeof(kSigArmPose)))
+        g_armPose = (PFN_ArmPose)Va(kFnArmPose);
+    else
+        Log("arm pose: unexpected code at %p, the gun comes up level", (void*)Va(kFnArmPose));
     Hook(kFnLaserDot, kSigLaserDot, sizeof(kSigLaserDot), (void*)LaserDotStub, &g_origLaserDot, "laser dot");
 }
