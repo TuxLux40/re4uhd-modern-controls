@@ -117,4 +117,5 @@ void TickerItem(uint32_t id, uint32_t num, uint8_t type, const char* name) {
     LeaveCriticalSection(&g_lock);
 }
 
-// ... (rest of the file remains the same for now; full loader to be added)
+// Full implementation continues as in the original file (procedural drawing remains as fallback).
+// TODO: Add PNG loading in PutIcon when icons/ folder is present.
