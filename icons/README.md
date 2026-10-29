@@ -1,31 +1,11 @@
-# Pickup Ticker Icons
+# Pickup Ticker Icons (SVG)
 
-These PNGs are sourced from https://www.evilresource.com/images/data/full/re4/ for use in the Pickup Log.
+Self-contained SVGs with the original item images embedded as base64 PNG (sourced from evilresource.com).
 
-Place the entire `icons/` folder next to `xinput1_3.dll` (in the game's Bin32/ directory).
+These are Capcom assets. Use at your own risk.
 
-The mod currently falls back to procedural drawing; PNG loading can be added in PutIcon.
+Place the `icons/` folder next to `xinput1_3.dll`.
 
-Files (download with the script or manually):
-- handgun-ammo.png
-- shotgun-shells.png
-- rifle-ammo.png
-- tmp-ammo.png
-- magnum-ammo.png
-- handcannon-ammo.png
-- hand-grenade.png
-- flash-grenade.png
-- incendiary-grenade.png
-- green-herb.png
-- red-herb.png
-- yellow-herb.png
-- first-aid-spray.png
-- chicken-egg.png
-- black-bass.png
-- ruby.png
-- emerald.png
-- gold-bar.png
-- crown.png
-- arrows.png
+To load them in the mod you still need a SVG/PNG renderer in `PutIcon()` (currently procedural GDI fallback).
 
-Copyright risk is on the user. For personal use only.
+Generated with embedded data so the files are pure text and easy to version.
