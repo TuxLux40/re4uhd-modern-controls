@@ -8,7 +8,7 @@
 // (handgun red, shotgun green, rifle white, TMP blue...), the grenades (hand olive, flash blue, incendiary red), the
 // herb's leaves, the eggs, the gems and the spray's cross.
 // Pictures: where assets/icons has a render of the item (built into the DLL, build/icons_data.h, named after the item:
-// "Handgun Ammo" -> handgun-ammo), it takes the drawn icon's place.
+// "Handgun Ammo" -> handgun-ammo; money: pesetas-small/-medium/-large), it takes the drawn icon's place.
 // Drawn from the Present hook (crosshair.cpp): GDI renders the lines into a texture (text with a dark outline, a faint
 // dark band behind each line fading out to the left), one alpha-blended quad per line puts them on the back buffer.
 // All render states are saved in a state block and put back afterwards.
@@ -74,7 +74,8 @@ void TickerItem(uint32_t id, uint32_t num, uint8_t type, const char* name) {
         snprintf(e.text, sizeof(e.text), "%s", name);
     auto has = [&](const char* s) { return strstr(name, s) != nullptr; };
     {
-        const char* src = money ? "pesetas" : name;
+        // Money: the game's three heaps (a small and a bigger chest, gold bars), by the amount.
+        const char* src = !money ? name : num < 1000 ? "pesetas-small" : num < 5000 ? "pesetas-medium" : "pesetas-large";
         size_t k = 0;
         for (const char* c = src; *c && k + 1 < sizeof(e.image); ++c) {
             const char ch = *c >= 'A' && *c <= 'Z' ? (char)(*c - 'A' + 'a') : *c;
