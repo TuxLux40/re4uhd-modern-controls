@@ -30,10 +30,10 @@ No more tank controls: move where you push the stick, look around freely, walk w
 | ➕ **Remake-style crosshair** | A reticle in the middle of the screen, and your shots and the laser go there. The camera follows your aim, never the gun, so recoil doesn't shake the view. The original aim sway is gone. Instead the ticks open up while you walk, turn or fire and close again when you hold still, and shots land anywhere inside them. The laser is just a beam now, without its red dot. `CenteredAim=0` brings back the original camera, sway and laser, with the reticle following the laser. |
 | 🔴 **Target indicator** | The centre dot turns red and grows while it rests on something that takes damage (enemies, lamps, barrels). Outside of aiming a small dot marks the middle of the screen (`CenterDot=0` hides it). |
 | 🎒 **Quick item pickup** | A takes the everyday pickups straight away, like the remakes: ammo, grenades, herbs, eggs and fish, treasures and money come without the dark pickup screen, the "Will you take it?" and the Yes/No. When it doesn't fit, the case opens to make room, as always. Weapons, key items and other important finds keep their screen (`QuickPickup=0` brings it back for everything). |
-| 📜 **Pickup log** | A few lines on the right, above the HUD, say what you just took, like the newer Resident Evil games: the name and the count ("Handgun Ammo x30", "5000 PTAS") with a small icon after it. Each kind of item has its own icon: the ammo boxes and grenades in the colors they have in the game (handgun red, shotgun green, TMP blue...), herbs, spray, eggs, fish, gems, crowns and other treasures, money. They slide in and fade out after a few seconds (`PickupTicker=0` hides them). |
+| 📜 **Pickup log** | A few lines on the right, above the HUD, say what you just took, like the newer Resident Evil games: the name and the count ("Handgun Ammo x30", "5000 PTAS") with a small icon after it. Each kind of item has its own icon: the ammo boxes and grenades in the colors they have in the game (handgun red, shotgun green, TMP blue...), herbs, spray, eggs, fish, gems, crowns and other treasures, money. They slide in and fade out after a few seconds (`PickupTicker=0` hides them). Ammo, grenades, herbs, the spray, eggs, the bass and some treasures show a picture of the item itself (`assets/icons`, built into the DLL); the rest a drawn icon. |
 | 💣 **Back to your gun after the last grenade** | Throw your last grenade or egg and Leon takes the weapon he held before it instead of standing there empty-handed (`Rearm=0` turns it off). |
 | 🛡️ **Ashley is safe from your shots** | With the camera free, it's easy to catch her in the crossfire. Your guns and knife no longer hurt her, the way her armour costume protects her; enemies and explosions still do. Can be switched off. |
-| 👻 **Fade when the camera is close** | Leon and Ashley turn see-through when the camera gets close to them (Ashley right behind Leon, a wall at your back), in two steps so the model never pops out entirely. `Fade`, `FadeNear`, `FadeFar` and `FadeMin` in `[Camera]` tune it. Enemies are never affected. |
+| 👻 **Fade when the camera is close** | Leon and Ashley turn see-through when the camera gets close to them (Ashley right behind Leon, a wall at your back), in two steps so the model never pops out entirely. Ashley only fades where she is in the way of the view; beside the camera, at the edge of the picture, she stays solid. `Fade`, `FadeNear`, `FadeFar` and `FadeMin` in `[Camera]` tune it. Enemies are never affected. |
 
 ## Install
 
@@ -222,7 +222,9 @@ Found a bug? [Open an issue](https://github.com/TuxLux40/re4uhd-modern-controls/
 | [**Ghidra**](https://github.com/NationalSecurityAgency/ghidra) (NSA) | Disassembly and decompilation of the game |
 | [**REA: Reverse Engineer Anything**](https://github.com/morluto/rea), by morluto | Reverse-engineering tooling for AI agents, used to analyse the game |
 | [**MinHook**](https://github.com/TsudaKageyu/minhook), by Tsuda Kageyu (BSD 2-clause) | Function hooking |
+| [**Evil Resource**](https://www.evilresource.com/resident-evil-4/items) | The item pictures in the pickup log (`assets/icons`, renders of the game's items) |
 
-<sub>Resident Evil is a trademark of Capcom. This project contains no game code or assets. Developers: see
+<sub>Resident Evil is a trademark of Capcom. This project contains no game code; the item pictures in `assets/icons` show
+Capcom's items and are not covered by the MIT license. Developers: see
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building and [docs/RE-NOTES.md](docs/RE-NOTES.md) for the
 reverse-engineering notes.</sub>

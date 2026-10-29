@@ -812,7 +812,7 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
 
 // Fade: Leon and Ashley turn see-through as the camera closes in (the remakes' behaviour). The game's model draw
 // multiplies the alpha by cModel +0x154 * +0x158; +0x154 is the game's own fade, +0x158 is 1.0 unless set.
-static float g_fadeEye[3];
+static float g_fadeEye[6];  // eye, target
 static float g_fade[2] = {1.0f, 1.0f};  // current factor: Leon, Ashley
 static int g_level[2] = {2, 2};  // 0 most see-through .. 2 visible
 static DWORD g_fadeTick = 0;
@@ -881,6 +881,26 @@ static float BodyDistance(uintptr_t ch) {
     return sqrtf(dx * dx + dy * dy + dz * dz);
 }
 
+// Ashley only fades where she is in the way: the camera inside her, or her body near the line of sight (the view's
+// centre, the first 3000 units). Beside or behind the camera, at the edge of the picture, she stays solid, as in the
+// original (2026-10-29: aiming with her 390 away at the left edge, she went see-through for nothing).
+static bool BlocksView(uintptr_t ch, float dist) {
+    if (dist < 150.0f) return true;
+    const float* p = (const float*)(ch + pl::Pos);
+    float dir[3] = {g_fadeEye[3] - g_fadeEye[0], g_fadeEye[4] - g_fadeEye[1], g_fadeEye[5] - g_fadeEye[2]};
+    const float len = sqrtf(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
+    if (!(len > 1.0f)) return true;
+    for (float& c : dir) c /= len;
+    for (int i = 0; i <= 4; ++i) {  // points up the body, feet to head
+        const float v[3] = {p[0] - g_fadeEye[0], p[1] + i * 425.0f - g_fadeEye[1], p[2] - g_fadeEye[2]};
+        const float t = v[0] * dir[0] + v[1] * dir[1] + v[2] * dir[2];
+        if (t <= 0.0f || t > 3000.0f) continue;
+        const float x = v[0] - t * dir[0], y = v[1] - t * dir[1], z = v[2] - t * dir[2];
+        if (x * x + y * y + z * z < 250.0f * 250.0f) return true;
+    }
+    return false;
+}
+
 // cModel draw (0x006EB450, cdecl(cModel*)). The factor is only in place for the draw of Leon and Ashley: several enemy
 // update routines copy +0x154/+0x158 from the model they are linked to, so a value left in the model would fade those
 // enemies too.
@@ -918,7 +938,7 @@ static void FadeTick() {
             const float t = (dist - c.fadeNear) / span;
             return t < 0.5f ? 0 : t < 1.0f ? 1 : 2;
         };
-        if (!on) g_level[i] = 2;
+        if (!on || (i == 1 && !BlocksView(ch[i], d))) g_level[i] = 2;
         else {
             const int down = level(d), up = level(d - 0.08f * span);
             if (down < g_level[i]) g_level[i] = down;
@@ -967,6 +987,7 @@ typedef void(__cdecl* PFN_KeyConvert)();
 static PFN_KeyConvert g_origKeyConvert = nullptr;
 
 void TestkitTick();  // testkit.cpp
+void AimPoseDiag();  // shot.cpp
 
 // The camera's own state, for the test kit's status line.
 void CameraStatus(char* out, size_t n) {
@@ -980,6 +1001,7 @@ void CameraStatus(char* out, size_t n) {
 static void __cdecl HookKeyConvert() {
     g_origKeyConvert();
     TestkitTick();
+    AimPoseDiag();
     FadeTick();
     if (!g_moving || !FreeCameraActive()) return;
     uint64_t& keys = *(uint64_t*)Va(kKeyBtnOn);

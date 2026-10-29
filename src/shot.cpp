@@ -14,6 +14,7 @@
 #include "re4.h"
 #include "config.h"
 #include <math.h>
+#include <stdio.h>
 #include "MinHook.h"
 
 using namespace re4;
@@ -322,6 +323,7 @@ static float g_setPitch = 0.0f;      // the vertical aim to swing to when the ai
 static volatile DWORD g_setPitchUntil = 0;
 typedef void(__thiscall* PFN_ArmPose)(uintptr_t ctrl, float v);
 static PFN_ArmPose g_armPose = nullptr;  // null: unexpected code there, left alone
+static DWORD g_poseDiagFrom = 0;
 // Aim start: Leon swings his vertical aim to the view's (applied on the sway calls of the next 0.3 s, after the game's own
 // reset of the aim at its start). The game's aim routines (and with them the sway) only start once the gun is raised,
 // about 0.17 s in; until then the arm kept its level pose, so the gun came up level and then tilted to the view's
@@ -336,6 +338,23 @@ void SetAimPitch(float rad) {
     const uintptr_t model = Readable((void*)ctrl, 8) ? *(uintptr_t*)ctrl : 0;
     if (g_armPose && model >= 0x10000 && Readable((void*)(model + 0x2A8), 4) && *(uintptr_t*)(model + 0x2A8))
         g_armPose(ctrl, v);
+    g_poseDiagFrom = GetTickCount();
+}
+// Diag: the gun still tilts after the aim start with the pose set at once. Logs the arm pose controller and its motion
+// layer once a frame for 0.7 s after the aim start (camera.cpp's input tick).
+void AimPoseDiag() {
+    const DWORD t = GetTickCount() - g_poseDiagFrom;
+    if (!g_poseDiagFrom || t > 700) return;
+    const uintptr_t ctrl = Va(kArmPoseCtrl);
+    const uintptr_t model = *(uintptr_t*)ctrl;
+    uintptr_t layer = 0;
+    if (model >= 0x10000 && Readable((void*)(model + 0x2A8), 4)) layer = *(uintptr_t*)(model + 0x2A8);
+    char b[400];
+    int k = snprintf(b, sizeof b, "diag pose %3lu ms: ctrl %.2f start %.2f aimV %.2f model %X layer %X", (unsigned long)t,
+                     *(float*)(ctrl + 4), *(float*)Va(kAimVStart), *(float*)Va(kAimV), (unsigned)model, (unsigned)layer);
+    if (layer >= 0x10000 && Readable((void*)(layer + 0xA0), 0x40))
+        for (int i = 0; i < 16; ++i) k += snprintf(b + k, sizeof b - k, " %.2f", ((float*)(layer + 0xA0))[i]);
+    Log("%s", b);
 }
 // The sway anchor came back after a gap (a weapon switch drops it for a few frames): its value then is the game's
 // reset, not a stick move, so the camera can't see it as a jump.

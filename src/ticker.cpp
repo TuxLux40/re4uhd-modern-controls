@@ -7,6 +7,8 @@
 // rings, gold bars, other treasures, money). Color only where it tells something, mostly the game's own: the ammo boxes
 // (handgun red, shotgun green, rifle white, TMP blue...), the grenades (hand olive, flash blue, incendiary red), the
 // herb's leaves, the eggs, the gems and the spray's cross.
+// Pictures: where assets/icons has a render of the item (built into the DLL, build/icons_data.h, named after the item:
+// "Handgun Ammo" -> handgun-ammo), it takes the drawn icon's place.
 // Drawn from the Present hook (crosshair.cpp): GDI renders the lines into a texture (text with a dark outline, a faint
 // dark band behind each line fading out to the left), one alpha-blended quad per line puts them on the back buffer.
 // All render states are saved in a state block and put back afterwards.
@@ -14,6 +16,7 @@
 #include "config.h"
 #include <d3d9.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <initializer_list>
@@ -34,6 +37,7 @@ struct Entry {
     Icon icon;
     COLORREF col;      // the icon's accent color (kWhite: none)
     uint8_t kind;      // ammo boxes: which box (AmmoBox)
+    char image[48];    // picture in assets/icons (the item's name, lower case, '-' between words)
     DWORD t;
 };
 static Entry g_entries[kLines];
@@ -69,6 +73,17 @@ void TickerItem(uint32_t id, uint32_t num, uint8_t type, const char* name) {
     else
         snprintf(e.text, sizeof(e.text), "%s", name);
     auto has = [&](const char* s) { return strstr(name, s) != nullptr; };
+    {
+        const char* src = money ? "pesetas" : name;
+        size_t k = 0;
+        for (const char* c = src; *c && k + 1 < sizeof(e.image); ++c) {
+            const char ch = *c >= 'A' && *c <= 'Z' ? (char)(*c - 'A' + 'a') : *c;
+            if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) e.image[k++] = ch;
+            else if (k && e.image[k - 1] != '-') e.image[k++] = '-';
+        }
+        while (k && e.image[k - 1] == '-') --k;
+        e.image[k] = 0;
+    }
     e.col = kWhite;
     if (money || type == 8) {
         e.icon = IC_COINS;
@@ -359,8 +374,46 @@ static void DrawIconShapes(HDC dc, int n, const Entry& e) {
     DeleteObject(pen);
 }
 
+struct EmbeddedIcon {
+    const char* name;
+    int w, h;
+    const uint32_t* px;  // ARGB, straight alpha, cropped to the item
+};
+#include "icons_data.h"
+
+static const EmbeddedIcon* OwnIcon(const char* name) {
+    for (const EmbeddedIcon& e : kEmbeddedIcons)
+        if (!strcmp(e.name, name)) return &e;
+    return nullptr;
+}
+
+// The item's picture into the line (size x size at x, y), scaled to fit, box-filtered, over the band.
+static void PutImage(uint32_t* dst, UINT pitchPx, int x, int y, int size, const EmbeddedIcon& im) {
+    const float sc = (float)size / (float)(im.w > im.h ? im.w : im.h);
+    const int ow = (int)(im.w * sc + 0.5f), oh = (int)(im.h * sc + 0.5f);
+    const int ox0 = x + (size - ow) / 2, oy0 = y + (size - oh) / 2;
+    for (int oy = 0; oy < oh; ++oy)
+        for (int ox = 0; ox < ow; ++ox) {
+            const int sx0 = (int)(ox / sc), sx1 = (int)((ox + 1) / sc), sy0 = (int)(oy / sc), sy1 = (int)((oy + 1) / sc);
+            uint32_t r = 0, g = 0, b = 0, a = 0, cnt = 0;
+            for (int sy = sy0; sy < (sy1 > sy0 ? sy1 : sy0 + 1) && sy < im.h; ++sy)
+                for (int sx = sx0; sx < (sx1 > sx0 ? sx1 : sx0 + 1) && sx < im.w; ++sx) {
+                    const uint32_t p = im.px[sy * im.w + sx], pa = p >> 24;
+                    r += ((p >> 16) & 0xFF) * pa, g += ((p >> 8) & 0xFF) * pa, b += (p & 0xFF) * pa, a += pa, ++cnt;
+                }
+            if (!cnt || !a) continue;
+            r /= a, g /= a, b /= a;
+            const uint32_t ca = a / cnt;
+            uint32_t& d = dst[(oy0 + oy) * pitchPx + ox0 + ox];
+            const uint32_t ba = d >> 24, oa = ca + ba * (255 - ca) / 255;
+            if (!oa) continue;
+            d = (oa << 24) | ((r * ca / oa) << 16) | ((g * ca / oa) << 8) | (b * ca / oa);
+        }
+}
+
 // The icon, drawn 4x and averaged down (GDI's shapes have no anti-aliasing), over the line's pixels at (x, y).
 static void PutIcon(uint32_t* dst, UINT pitchPx, int x, int y, int size, const Entry& e) {
+    if (const EmbeddedIcon* im = OwnIcon(e.image)) return PutImage(dst, pitchPx, x, y, size, *im);
     const int s = 4, n = size * s;
     const uint32_t key = 0x00FF00FF;
     BITMAPINFO bi = {};
