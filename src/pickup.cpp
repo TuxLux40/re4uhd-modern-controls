@@ -7,8 +7,8 @@
 // doesn't fit they open the case (SubScreenOpen 4) to make room, as always. Treasures, keys and money are taken
 // before the message and only wait for it to close (0xC17848 bit 0).
 // The mod rewrites the MesSet calls of those two routines. For the everyday pickups (ammo, grenades, herbs and the
-// other consumables like eggs and fish, treasures, money) the message is skipped and a Yes/No answers Yes; weapons,
-// key items and the other important finds keep their screen. The rest of the game's own routine runs as before: the
+// other consumables like eggs and fish, the small stones Spinel and Velvet Blue, money) the message is skipped and a
+// Yes/No answers Yes; weapons, key items, the other treasures and the other important finds keep their screen. The rest of the game's own routine runs as before: the
 // item goes into the case, or the case opens when it's full. The item comes from the pickup start 0x006BCDB0 (cdecl,
 // the item's entry; id at +0x78).
 // 0x006BB720 waits one frame between its message and the answer check, so the answer is set again right before the
@@ -16,6 +16,7 @@
 #include "common.h"
 #include "config.h"
 #include "item_names.h"
+#include <string.h>
 
 static const uint32_t kThunkMesSet = 0x0000E7A5;    // jmp MesSet 0x00718DE0
 static const uint32_t kThunkItemView = 0x0000941C;  // jmp 0x0062B340 (thiscall, the item on the pickup screen)
@@ -54,9 +55,16 @@ extern "C" int __cdecl PickupMessage(uint32_t flags) {
     uint8_t info[32] = {};
     ((void(__cdecl*)(uint32_t, void*))Va(kFnItemInfo))(g_pickItem, info);
     // Item types (re4_tweaks ITEM_TYPE): 2 ammo, 3 grenade, 5 treasure, 6 consumable (herbs, sprays, eggs, fish),
-    // 8 money and the Mercenaries bonuses, 12 gem. Everything else (weapons, key items, files...) keeps its screen.
+    // 8 money and the Mercenaries bonuses, 12 gem. Of the treasures only the small stones go quietly; the others
+    // (crowns, beersteins, masks, the gems for them...) and everything else (weapons, key items, files...) keep
+    // their screen.
     const uint8_t t = info[2];
-    if (t != 2 && t != 3 && t != 5 && t != 6 && t != 8 && t != 12) return 1;
+    if (t == 5 || t == 12) {
+        const char* n = ItemName(g_pickItem);
+        if (strcmp(n, "Spinel") && strcmp(n, "Velvet Blue")) return 1;
+    } else if (t != 2 && t != 3 && t != 6 && t != 8) {
+        return 1;
+    }
     if (flags & 0x2700) {  // the Yes/No ones (0x111, 0x211 ammo, 0x411 consumables, 0x2011); the others took it already
         g_pickupYes = 1;
         *g_pickupAnswer = 1;
