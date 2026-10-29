@@ -74,8 +74,9 @@ void TickerItem(uint32_t id, uint32_t num, uint8_t type, const char* name) {
         snprintf(e.text, sizeof(e.text), "%s", name);
     auto has = [&](const char* s) { return strstr(name, s) != nullptr; };
     {
-        // Money: the game's three heaps (a small and a bigger chest, gold bars), by the amount.
-        const char* src = !money ? name : num < 1000 ? "pesetas-small" : num < 5000 ? "pesetas-medium" : "pesetas-large";
+        // Money: the item says which heap it is (item info type 8, the amount as its count): Treasure Box S (0x78), Treasure
+        // Box L (0x79), Gold Bar (0x71).
+        const char* src = !money ? name : id == 0x71 ? "pesetas-large" : id == 0x79 ? "pesetas-medium" : "pesetas-small";
         size_t k = 0;
         for (const char* c = src; *c && k + 1 < sizeof(e.image); ++c) {
             const char ch = *c >= 'A' && *c <= 'Z' ? (char)(*c - 'A' + 'a') : *c;
