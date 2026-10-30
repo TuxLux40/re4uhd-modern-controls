@@ -61,6 +61,21 @@ game already uses for that job (KEY_RUN, PlReloadDirect, the camera's CamPoint, 
 - **Taken instead (milestone 2026-10-30):** no gun convergence at all. Gun parallel to the view, bullets to the
   centre, sway anchored on both axes, raise motions from the game's own tables.
 
+## Aim start — raise motions per weapon family, one at a time (2026-10-30)
+- **Tried:** the learnt raise table, then a static lookup for the handgun family only (table +0x88 -> +0x9C/+0xA0).
+- **Failed because:** every weapon kind raises from its own routine with its own table offsets (0x48 -> 0x54/0x58,
+  0x7C -> 0x90/0x9C, 0x68 -> two different pairs, ...). The SMG still snapped down; patching family by family
+  repeats the per-weapon trap. The skill wasn't reloaded after a context compaction, so the variants check (gate 4)
+  was skipped.
+- **Next:** one lever for all weapons. Every raise routine already has the PC modern-mouse-aim branch
+  (`0x012224B0 == 1`) that picks the live aim's up/down motions. The flag is read in 149 functions, so it can't be
+  set globally; candidates: set it only around the raise state's dispatch, or hook ArmPoseCtrl_Init.
+
+## Aim — shotgun points ~26 deg right of the view (2026-10-30, open)
+- With the game's own live pose, heading = view and side ~0, the shotgun's laser is 26 deg right and 15 deg above
+  the reticle (handgun: 0-4 deg). The pre-10-29 30 deg upper-body twist was hiding this. Mechanism unknown: how the
+  game's own aim camera places itself for the shotgun stance. Phase 1 needed before any fix.
+
 ## Aim start — seeding pitch from the free camera (2026-10-17 and 2026-10-18)
 - **Tried:** start the aim at the camera's pitch (stairs case); later the same for the Red 9.
 - **Failed because:** the raise motion ignores the arm value (see aim.md), so the gun first pointed level, then

@@ -422,7 +422,7 @@ static uintptr_t g_raiseSeen = 0, g_raiseWeapon = 0;  // this aim's raise motion
 static void RaisePose() {
     const uintptr_t ctrl = Va(kArmPoseCtrl), pl = PlayerPtr();
     uintptr_t* c = (uintptr_t*)ctrl;
-    if (!g_armPose || !pl || !CenteredView() || At<uint8_t>(pl, pl::RNo0 + 1) != 6 || c[0] < 0x10000 ||
+    if (!g_armPose || !pl || !CenteredView() || !Cfg().shoulderAim || At<uint8_t>(pl, pl::RNo0 + 1) != 6 || c[0] < 0x10000 ||
         !Readable((void*)(c[0] + 0x2A8), 4) || *(uintptr_t*)(c[0] + 0x2A8) != ctrl + 0x18)
         return;
     const uintptr_t weapon = Readable((void*)(pl + 0x46C), 4) ? *(uintptr_t*)(pl + 0x46C) : 0;
@@ -514,6 +514,13 @@ static void __cdecl HookSway(uintptr_t pl, uint32_t mode, float* v, float* side)
         return;
     }
     if (!g_haveAnchor) g_anchorBack = true;
+    if (!Cfg().shoulderAim) {
+        // The game's aim camera: its own aim, back to the sway's anchor on both axes (no drift, no kick). The spread
+        // reticle stands in for the sway.
+        *v = At<float>(sw, 0x28) * 0.63661977f, *side = At<float>(sw, 0x2C);
+        g_outValid = false;
+        return;
+    }
     const bool window = (int)(g_setPitchUntil - GetTickCount()) > 0;
     if (window) {
         *(float*)(sw + 0x28) = g_setPitch;

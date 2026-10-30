@@ -22,6 +22,7 @@ struct Config {
     bool pickupTicker = true;      // a line at the left edge says what QuickPickup took
     bool autoQte = true;           // quick-time events pass on their own (their prompts are hidden with the action prompts)
     bool centeredAim = true;
+    bool shoulderAim = false;    // the mod's own aim camera over the shoulder; off: the game's aim camera (centred reticle stays)
     bool keepViewOnAim = true;   // raising the gun keeps the view's direction (remake style) instead of looking where Leon looks    // while aiming the camera looks where the laser points: crosshair in the centre
     float aimShoulderRight = 400.0f;   // aim camera: sideways from Leon's centre (game units, + = right)
     float aimShoulderBack = 750.0f;    // behind the shoulder spot along the view

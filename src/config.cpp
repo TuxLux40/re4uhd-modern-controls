@@ -66,6 +66,7 @@ void LoadConfig() {
     c.quickPickup = ReadFloat(path, "Buttons", "QuickPickup", 1.0f) != 0.0f;
     c.pickupTicker = ReadFloat(path, "Buttons", "PickupTicker", 1.0f) != 0.0f;
     c.keepViewOnAim = ReadFloat(path, "Aim", "KeepViewOnAim", 1.0f) != 0.0f;
+    c.shoulderAim = ReadFloat(path, "Aim", "ShoulderAim", 0.0f) != 0.0f;
     c.aimShoulderRight = ReadFloat(path, "Aim", "ShoulderRight", 400.0f);
     c.aimShoulderBack = ReadFloat(path, "Aim", "ShoulderBack", 750.0f);
     c.aimShoulderHeight = ReadFloat(path, "Aim", "ShoulderHeight", 1550.0f);
