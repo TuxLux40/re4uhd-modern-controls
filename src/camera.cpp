@@ -75,6 +75,10 @@ static bool g_wasAiming = false;
 static float g_aimFreeYaw = 0.0f, g_aimFreePitch = 0.0f, g_aimPitch0 = 0.0f;
 static float g_aimViewYaw = 0.0f, g_aimViewPitch = 0.0f;
 static bool g_aimHandBack = false;
+// The view's direction right after the aim start, and the turns the point lock made on its own (not the stick): the
+// hand-back leaves those out, so an aim without the stick ends where the free camera was. Handing back the aim's
+// view as it was moved the reticle 1-2 deg right and down with each aim (log 2026-10-29).
+static float g_aimYaw0 = 0.0f, g_lockYaw = 0.0f, g_lockPitch = 0.0f;
 static float g_zoomS = 0.0f;    // the aim camera's zoom, eased (0 = the free camera's distance and field of view)
 static float g_freeFov = 0.0f;  // the free camera's field of view, last free frame
 static bool g_wasMoving = false;
@@ -288,6 +292,7 @@ static void RotatePitch(float* p, const float* pivot, float fx, float fz, float 
     p[2] = pivot[2] + lz + a2 * fz;
 }
 
+void AimConvEnd();
 static void CenterAimCamera(float* eye, float* tgt, float dt, bool start);
 extern bool g_aimLocked;
 void SetShotView(const float* eye, const float* tgt);
@@ -468,9 +473,10 @@ static void __fastcall HookQfpsMoveBody(uintptr_t self, void* edx) {
     if (eye[7] > 20.0f && eye[7] < 90.0f) g_freeFov = eye[7];  // not the fov 5-10 sweep back from an action camera
     // The centered aim instead hands its view back: the free camera continues looking exactly where the aim looked
     // (the free camera looks along g_yaw itself).
+    if (g_wasAiming) AimConvEnd();
     if (g_wasAiming && g_aimHandBack) {
-        g_yaw = WrapPi(g_aimViewYaw);
-        g_pitch = Clamp(g_aimFreePitch - (g_aimViewPitch - g_aimPitch0), -0.6f, 1.0f);
+        g_yaw = WrapPi(g_aimFreeYaw + WrapPi(g_aimViewYaw - g_aimYaw0 - g_lockYaw));
+        g_pitch = Clamp(g_aimFreePitch - (g_aimViewPitch - g_aimPitch0 - g_lockPitch), -0.6f, 1.0f);
         g_modBlend = 1.0f;
         Log("cam: aim end, free camera yaw %.3f pitch %.1f", g_yaw, g_pitch * 57.3f);
     } else if (g_wasAiming) {
@@ -619,6 +625,10 @@ void SetAimCentered();
 float TakeAimPitchMove();
 bool TakeAimReset();
 void SetAimPitch(float rad);
+float AimViewSide(uintptr_t pl);
+float AimGameYaw(uintptr_t pl);
+float AimConvYaw();
+void AimConvEnd();
 
 // Centered aim, like RE5: the aim camera sits over Leon's right shoulder at a fixed spot relative to the view
 // (AimShoulderRight/Back/Height), circling the shoulder as the view turns, so Leon always keeps his place on screen.
@@ -643,9 +653,11 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     const uintptr_t pl = Player();
     if (!pl) return;
     const Config& cfg = Cfg();
-    float leonYaw = At<float>(pl, pl::Ang + 4);
+    if (start || !g_aimLocked) AimConvEnd();
+    // Leon's heading without the share the gun's aim adds (shot.cpp): the view follows the stick, not that.
+    float leonYaw = AimGameYaw(pl);
     bool stickMoved = false;  // the player moves the aim: the point lock hands over
-    const float side = At<float>(pl, 0x448);
+    const float side = AimViewSide(pl);
     const float* pos = (const float*)(pl + pl::Pos);
     if (start || !g_aimLocked) {
         // The view on screen (Camera_60's finished eye and target, last frame's: the free camera, after the game's
@@ -680,7 +692,7 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
             g_relYaw = 0.0f;
             g_relPitch = Clamp(atan2f(g_freeDir[1], sqrtf(g_freeDir[0] * g_freeDir[0] + g_freeDir[2] * g_freeDir[2])),
                                -1.0f, 1.0f);
-            g_aimPitch0 = g_relPitch, g_aimHandBack = true;
+            g_aimPitch0 = g_relPitch, g_aimYaw0 = leonYaw, g_aimHandBack = true;
         } else {
             g_relYaw = 0.0f, g_relPitch = 0.0f;
         }
@@ -766,8 +778,7 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
     // The glide to the shoulder moves the eye (higher, to the side), and the same direction from there would look at
     // another spot. While it lasts the view turns to keep looking at the point the reticle marked at rest, and Leon's
     // gun with it, so rest view and aim agree. The stick takes over as soon as it moves.
-    static float s_lockYaw = 0.0f, s_lockPitch = 0.0f;
-    if (start) s_lockYaw = s_lockPitch = 0.0f;
+    if (start) g_lockYaw = g_lockPitch = 0.0f;
     if (g_aimLock && cfg.keepViewOnAim && !QuickAim()) {
         if (stickMoved) {
             g_aimLock = false;
@@ -782,16 +793,16 @@ static void CenterAimCamera(float* eye, float* tgt, float dt, bool start) {
             }
             const float dy = WrapPi(ny - yaw), dpitch = np - pitch;
             float* ang = (float*)(pl + pl::Ang);
-            ang[1] = leonYaw = ny, g_relYaw = 0.0f;
+            ang[1] = WrapPi(ny + AimConvYaw()), leonYaw = ny, g_relYaw = 0.0f;
             g_relPitch = np;
             SetAimPitch(np);
-            s_lockYaw += dy, s_lockPitch += dpitch;
+            g_lockYaw += dy, g_lockPitch += dpitch;
             yaw = ny, pitch = np;
             d[0] = cosf(pitch) * sinf(yaw), d[1] = sinf(pitch), d[2] = cosf(pitch) * cosf(yaw);
             // A point close by (the floor right in front of Leon) would turn the view by up to 90 deg: stop at 20.
-            if (g_zoom >= 1.0f || fabsf(s_lockYaw) > 0.35f || fabsf(s_lockPitch) > 0.35f) {
+            if (g_zoom >= 1.0f || fabsf(g_lockYaw) > 0.35f || fabsf(g_lockPitch) > 0.35f) {
                 g_aimLock = false;
-                Log("cam: aim point lock done, view turned %+.1f deg sideways, %+.1f deg up/down", s_lockYaw * 57.3f, s_lockPitch * 57.3f);
+                Log("cam: aim point lock done, view turned %+.1f deg sideways, %+.1f deg up/down", g_lockYaw * 57.3f, g_lockPitch * 57.3f);
             }
         }
     }
@@ -987,7 +998,7 @@ typedef void(__cdecl* PFN_KeyConvert)();
 static PFN_KeyConvert g_origKeyConvert = nullptr;
 
 void TestkitTick();  // testkit.cpp
-void AimPoseDiag();  // shot.cpp
+void AimPoseTick();  // shot.cpp
 
 // The camera's own state, for the test kit's status line.
 void CameraStatus(char* out, size_t n) {
@@ -1001,7 +1012,7 @@ void CameraStatus(char* out, size_t n) {
 static void __cdecl HookKeyConvert() {
     g_origKeyConvert();
     TestkitTick();
-    AimPoseDiag();
+    AimPoseTick();
     FadeTick();
     if (!g_moving || !FreeCameraActive()) return;
     uint64_t& keys = *(uint64_t*)Va(kKeyBtnOn);

@@ -15,6 +15,7 @@
 #include "config.h"
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 #include "MinHook.h"
 
 using namespace re4;
@@ -41,6 +42,9 @@ void* g_origLaserDot = nullptr;
 static float g_gunStart[3], g_gunEnd[3], g_gunHit[3];  // the gun's own line (before the laser is turned) and its first hit
 static volatile DWORD g_gunTick = 0;
 static float g_target[3];  // the point under the reticle
+static float g_gunPoint[3];  // what the gun aims at: on the reticle's line, at its point's distance eased
+static float g_gunInvDist = 0.0f;
+static LARGE_INTEGER g_gunDistLast = {};
 static volatile DWORD g_targetTick = 0;
 static bool g_onTarget = false;  // it is on something that takes damage
 
@@ -125,12 +129,13 @@ static void KickSpread() {
 
 // The aim camera handed on this frame (set by the camera hook while aiming with the centered aim): its turn opens the
 // spread, and Leon's heading then turns the view on screen to this frame's (CastTarget).
+float AimGameYaw(uintptr_t pl);
 void SetShotView(const float* eye, const float* tgt) {
     const float d[3] = {tgt[0] - eye[0], tgt[1] - eye[1], tgt[2] - eye[2]};
     const float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
     if (l < 1.0f) return;
     for (int i = 0; i < 3; ++i) g_viewDir[i] = d[i] / l;
-    if (const uintptr_t pl = PlayerPtr()) g_viewLeonYaw = At<float>(pl, pl::Ang + 4);
+    if (const uintptr_t pl = PlayerPtr()) g_viewLeonYaw = AimGameYaw(pl);
     const DWORD now = GetTickCount();
     const bool fresh = now - g_viewTick > 200;  // a new aim
     g_viewTick = now;
@@ -179,7 +184,7 @@ static bool CastTarget(const float* muzzle) {
     const float* m = (const float*)(Va(kCamCtrl) + cc::Camera);
     float eye[3] = {m[3], m[7], m[11]}, dir[3] = {-m[2], -m[6], -m[10]};
     if (!Normalize(dir)) return false;
-    const float turn = WrapAngle(At<float>(pl, pl::Ang + 4) - g_viewLeonYaw);
+    const float turn = WrapAngle(AimGameYaw(pl) - g_viewLeonYaw);
     if (turn != 0.0f) {
         const float c = cosf(turn), s = sinf(turn);
         const float px = At<float>(pl, pl::Pos), pz = At<float>(pl, pl::Pos + 8);
@@ -205,6 +210,20 @@ static bool CastTarget(const float* muzzle) {
                  d2 < *(const float*)Va(kShootableDist2);
     }
     for (int i = 0; i < 3; ++i) g_target[i] = to[i];
+    // The gun's point eases its distance (by its inverse, about the angle the gun turns by): the point jumps whenever the
+    // reticle crosses an edge onto something nearer or farther, and with the gun beside the view that swung the gun a few
+    // degrees each time, so it jittered while the view turned slowly (2026-10-29). Its direction stays the reticle's.
+    LARGE_INTEGER now, freq;
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&freq);
+    const float dt = g_gunDistLast.QuadPart ? (float)(now.QuadPart - g_gunDistLast.QuadPart) / (float)freq.QuadPart : 1.0f;
+    g_gunDistLast = now;
+    const float mt[3] = {to[0] - eye[0], to[1] - eye[1], to[2] - eye[2]};
+    // Not nearer than 1000: for the floor right in front Leon would turn far off the view.
+    const float inv = 1.0f / fmaxf(1000.0f, Dot(mt, dir));
+    if (dt > 0.3f || g_gunInvDist <= 0.0f) g_gunInvDist = inv;
+    else g_gunInvDist += (inv - g_gunInvDist) * (1.0f - expf(-dt / 0.12f));
+    for (int i = 0; i < 3; ++i) g_gunPoint[i] = eye[i] + dir[i] / g_gunInvDist;
     g_onTarget = target;
     g_targetTick = GetTickCount();
     return true;
@@ -258,6 +277,48 @@ static void DiagLaser(int state, float off) {
     }
 }
 
+static float g_convYaw = 0.0f;  // added to Leon's heading (radians) during this aim, so the gun is on the reticle's point
+static float g_convV = 0.0f;    // added to the arm's vertical value
+// Diag: the gun's line against the line from its laser sight to the reticle's point, split into sideways and up/down
+// (degrees, + = the gun points left of / above the point), every 100 ms for 1.5 s after the aim start, then every 1 s.
+static DWORD g_poseDiagFrom = 0;
+static void DiagGunSplit(const float* sight, const float* gun) {
+    static DWORD s_last = 0;
+    const DWORD now = GetTickCount(), since = now - g_poseDiagFrom;
+    if (now - s_last < (since < 1500 ? 100u : 1000u) || GetTickCount() - g_targetTick > 100) return;
+    s_last = now;
+    float want[3] = {g_target[0] - sight[0], g_target[1] - sight[1], g_target[2] - sight[2]};
+    const float dist = Normalize(want);
+    if (dist <= 0.0f) return;
+    const float gy = atan2f(gun[0], gun[2]), gp = asinf(fmaxf(-1.0f, fminf(1.0f, gun[1])));
+    const float wy = atan2f(want[0], want[2]), wp = asinf(fmaxf(-1.0f, fminf(1.0f, want[1])));
+    Log("diag gun %4lu ms: gun yaw %.1f pitch %.1f, to the point yaw %.1f pitch %.1f -> off sideways %+.1f, up %+.1f, "
+        "point %.0f away, arm %.2f side %.2f, added heading %+.1f arm %+.2f",
+        (unsigned long)since, gy * 57.3f, gp * 57.3f, wy * 57.3f, wp * 57.3f, WrapAngle(gy - wy) * 57.3f,
+        (gp - wp) * 57.3f, dist, *(float*)Va(kAimV), PlayerPtr() ? At<float>(PlayerPtr(), 0x448) : 0.0f, g_convYaw * 57.3f, g_convV);
+}
+
+// The gun on the reticle's point (the remakes' look). The view sits over the shoulder, beside the gun, so a gun parallel
+// to the view hits beside the reticle's point. The gun is turned onto it with the game's own controls: sideways Leon's
+// heading (the game turns his whole body to aim sideways), up and down the arm's vertical value. Each frame the gun's
+// measured line (the laser's) against the line from its sight to the point gives the error, and half of it is added:
+// no model of the arm. The heading's share is kept apart (AimGameYaw), so the view, which follows Leon's heading, doesn't
+// turn with it. (Before: a learnt shoulder model twisting the upper body through the aim's sideways value cPlayer+0x448,
+// up to 30 deg. That value is only the sway's, a few degrees: the shotgun hung high at the edge of the view, 2026-10-29.)
+// The arm's vertical value turns the gun about 60 deg per unit (log 2026-10-29: -0.459 -> -27.5 deg, -0.407 -> -24.3),
+// not the 90 deg of the game's own radians-to-value factor (2/pi): the starting value, the rest is the error's.
+static const float kGunRadPerV = 1.047f;
+
+static bool AimLive(uintptr_t pl) {  // aiming with the gun up (r_no 6/1/0 or 6/1/1), not raising it
+    return At<uint8_t>(pl, pl::RNo0 + 1) == 6 && At<uint8_t>(pl, pl::RNo0 + 2) == 1 && At<uint8_t>(pl, pl::RNo0 + 3) <= 1;
+}
+// Leon's heading without the gun's share: what the stick and the view turned him to.
+float AimGameYaw(uintptr_t pl) { return WrapAngle(At<float>(pl, pl::Ang + 4) - g_convYaw); }
+float AimConvYaw() { return g_convYaw; }
+// The aim ended or starts: his heading keeps the share (a few degrees), it just is his own from now on.
+void AimConvEnd() { g_convYaw = g_convV = 0.0f; }
+static float ArmV(float pitch) { return fmaxf(-1.0f, fminf(1.0f, pitch / kGunRadPerV + g_convV)); }
+
 static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, float* end) {
     g_origLaserLine(self, edx, start, end);
     // Only the laser itself (LaserUpdate); the other callers use the line for their own checks.
@@ -276,12 +337,14 @@ static void __fastcall HookLaserLine(uintptr_t self, void* edx, float* start, fl
     }
     g_hideLaserDot = 1;
     float dir[3] = {end[0] - start[0], end[1] - start[1], end[2] - start[2]};
-    const float len = Normalize(dir);
-    float nd[3];
-    const bool steered = len > 0.0f && Steer(start, dir, nd, 0.0f);
-    DiagLaser(steered ? 0 : 2, DiagGunOff(start));
-    if (steered)
-        for (int i = 0; i < 3; ++i) end[i] = start[i] + nd[i] * len;
+    if (Normalize(dir) <= 0.0f) return;
+    // The beam stays the gun's own (the gun is turned onto the reticle's point instead). LaserUpdate moves its start
+    // kLaserPush along it: the laser sight, where the gun's error is measured from.
+    constexpr float kLaserPush = 500.0f;  // 0x00B26CB4
+    float sight[3];
+    for (int i = 0; i < 3; ++i) sight[i] = start[i] + dir[i] * kLaserPush;
+    DiagGunSplit(sight, dir);
+    DiagLaser(0, DiagGunOff(sight));
 }
 
 static void __cdecl HookBullet(uintptr_t owner, float* from, float* to, uint32_t wep, uint32_t a5, uint32_t a6) {
@@ -323,35 +386,100 @@ static float g_setPitch = 0.0f;      // the vertical aim to swing to when the ai
 static volatile DWORD g_setPitchUntil = 0;
 typedef void(__thiscall* PFN_ArmPose)(uintptr_t ctrl, float v);
 static PFN_ArmPose g_armPose = nullptr;  // null: unexpected code there, left alone
-static DWORD g_poseDiagFrom = 0;
+// The sway's last outputs (what the gun got) and the game's own values behind them. The game adds the stick to the
+// outputs and hands them back on the next call: they go back to its own values first, so the gun's offsets never reach
+// its aim or the anchors the view follows.
+static float g_gameV = 0.0f, g_outV = 0.0f;
+static bool g_outValid = false;
+static DWORD g_swayTick = 0;
+static float g_viewPitch = 0.0f;  // the view's pitch the camera last handed over (radians)
 // Aim start: Leon swings his vertical aim to the view's (applied on the sway calls of the next 0.3 s, after the game's own
-// reset of the aim at its start). The game's aim routines (and with them the sway) only start once the gun is raised,
-// about 0.17 s in; until then the arm kept its level pose, so the gun came up level and then tilted to the view's
-// height (log 2026-10-29: first sway call 167 ms after the aim start, pose value 0.0). So the pose is set here at once
-// as well, and the gun comes up at the view's height.
+// reset of the aim at its start). The pose is set at once as well; while the gun comes up, RaisePose keeps it.
 void SetAimPitch(float rad) {
-    g_setPitch = fmaxf(-1.4f, fminf(1.4f, rad));
+    g_setPitch = g_viewPitch = fmaxf(-1.4f, fminf(1.4f, rad));
     g_setPitchUntil = GetTickCount() + 300;
-    const float v = g_setPitch * 0.63661977f;
+    g_convV = 0.0f;  // the gun comes up afresh
+    const float v = ArmV(g_setPitch);
     *(float*)Va(kAimV) = *(float*)Va(kAimVStart) = v;
+    g_gameV = g_setPitch * 0.63661977f, g_outV = v;
     const uintptr_t ctrl = Va(kArmPoseCtrl);
     const uintptr_t model = Readable((void*)ctrl, 8) ? *(uintptr_t*)ctrl : 0;
     if (g_armPose && model >= 0x10000 && Readable((void*)(model + 0x2A8), 4) && *(uintptr_t*)(model + 0x2A8))
         g_armPose(ctrl, v);
     g_poseDiagFrom = GetTickCount();
 }
-// Diag: the gun still tilts after the aim start with the pose set at once. Logs the arm pose controller and its motion
-// layer once a frame for 0.7 s after the aim start (camera.cpp's input tick).
-void AimPoseDiag() {
+// The gun coming up (aim start, r_no 6/0) sets the arm's layer up with the raise motion for all three of its
+// motions (level, up, down: 0x00753660), so the arm's value did nothing until the aim motions came in at r_no 6/1/0,
+// about 0.5 s in: the gun came up level and then tilted to the aim (log 2026-10-29). The aim's up and down motions go in
+// instead, so the gun comes up at its height. Each weapon kind raises from its own function and tables (0x00753660,
+// 0x008FCAA0, 0x008FECB0, 0x009152C0, ...), so the aim's motions are learnt from the layer once the aim is live, per
+// raise motion and weapon; the first raise of each still comes up level.
+static uintptr_t MotionAt(uintptr_t table, int off) { return table + *(int*)(table + off); }
+struct RaiseAim { uintptr_t raise, weapon, up, down; };
+static RaiseAim g_raiseAims[16];
+static int g_raiseAimCount = 0;
+static uintptr_t g_raiseSeen = 0, g_raiseWeapon = 0;  // this aim's raise motion, until the aim is live
+static void RaisePose() {
+    const uintptr_t ctrl = Va(kArmPoseCtrl), pl = PlayerPtr();
+    uintptr_t* c = (uintptr_t*)ctrl;
+    if (!g_armPose || !pl || !CenteredView() || At<uint8_t>(pl, pl::RNo0 + 1) != 6 || c[0] < 0x10000 ||
+        !Readable((void*)(c[0] + 0x2A8), 4) || *(uintptr_t*)(c[0] + 0x2A8) != ctrl + 0x18)
+        return;
+    const uintptr_t weapon = Readable((void*)(pl + 0x46C), 4) ? *(uintptr_t*)(pl + 0x46C) : 0;
+    static bool s_switch = false, s_swapped = false;
+    if (c[2] == c[3] && c[3] == c[4]) {  // the raise's layer, just set up
+        g_raiseSeen = c[2], g_raiseWeapon = weapon, s_swapped = false;
+        for (int i = 0; i < g_raiseAimCount; ++i)
+            if (g_raiseAims[i].raise == c[2] && g_raiseAims[i].weapon == weapon) {
+                c[3] = g_raiseAims[i].up, c[4] = g_raiseAims[i].down, s_switch = s_swapped = true;
+                Log("gun: raise with the aim's up/down motions, arm %.2f", ArmV(g_viewPitch));
+                break;
+            }
+        // The handgun family (0x008FCAA0) raises with the weapon motion table's +0x88; the game's own modern-mouse-aim
+        // path (0x012224B0 == 1) raises with that table's +0x9C/+0xA0 as up and down, the live aim's (0x008FD390).
+        // Checked live 2026-10-30. So the first raise of these weapons is right too, without learning.
+        const uintptr_t g = *(uintptr_t*)Va(kGlobalPtr);
+        const uintptr_t table = g && Readable((void*)(g + 0x44), 4) ? *(uintptr_t*)(g + 0x44) : 0;
+        if (!s_swapped && table >= 0x10000 && Readable((void*)(table + 0x88), 0x1C) && MotionAt(table, 0x88) == c[2]) {
+            c[3] = MotionAt(table, 0x9C), c[4] = MotionAt(table, 0xA0), s_switch = s_swapped = true;
+            Log("gun: raise with the table's aim up/down motions, arm %.2f", ArmV(g_viewPitch));
+        }
+    } else if (g_raiseSeen && c[2] != g_raiseSeen && AimLive(pl)) {  // the aim's layer: remember its motions
+        int i = 0;
+        while (i < g_raiseAimCount && !(g_raiseAims[i].raise == g_raiseSeen && g_raiseAims[i].weapon == g_raiseWeapon)) ++i;
+        if (i == g_raiseAimCount && i < 16) ++g_raiseAimCount, Log("gun: learnt the aim's motions for raise %X", (unsigned)g_raiseSeen);
+        if (i < 16) g_raiseAims[i] = {g_raiseSeen, g_raiseWeapon, c[3], c[4]};
+        g_raiseSeen = 0, s_swapped = false;
+    }
+    if (!s_swapped || c[2] != g_raiseSeen) return;
+    const float v = ArmV(g_viewPitch);
+    // The pose switches its motion only when the value changes sign; from 0 it doesn't for an upward value.
+    if (s_switch && v != 0.0f) ((float*)c)[1] = v > 0.0f ? -1e-6f : 1e-6f, s_switch = false;
+    *(float*)Va(kAimV) = *(float*)Va(kAimVStart) = v;
+    g_outV = v;
+    g_armPose(ctrl, v);
+}
+// Once a frame (camera.cpp's input tick): the pose while the gun comes up, and the diag: the arm pose controller and its
+// motion layer for 0.7 s after the aim start.
+void AimPoseTick() {
+    RaisePose();
     const DWORD t = GetTickCount() - g_poseDiagFrom;
     if (!g_poseDiagFrom || t > 700) return;
     const uintptr_t ctrl = Va(kArmPoseCtrl);
     const uintptr_t model = *(uintptr_t*)ctrl;
     uintptr_t layer = 0;
     if (model >= 0x10000 && Readable((void*)(model + 0x2A8), 4)) layer = *(uintptr_t*)(model + 0x2A8);
-    char b[400];
-    int k = snprintf(b, sizeof b, "diag pose %3lu ms: ctrl %.2f start %.2f aimV %.2f model %X layer %X", (unsigned long)t,
-                     *(float*)(ctrl + 4), *(float*)Va(kAimVStart), *(float*)Va(kAimV), (unsigned)model, (unsigned)layer);
+    char b[600];
+    uintptr_t table = 0;
+    if (const uintptr_t g = *(uintptr_t*)Va(kGlobalPtr)) table = *(uintptr_t*)(g + 0x50);
+    const uintptr_t* c = (const uintptr_t*)ctrl;
+    int k = snprintf(b, sizeof b, "diag pose %3lu ms: ctrl %.2f start %.2f aimV %.2f model %X layer %X | motions %X %X %X, "
+                     "table raise %X up %X down %X | centred %d rno %02X%02X%02X |", (unsigned long)t,
+                     *(float*)(ctrl + 4), *(float*)Va(kAimVStart), *(float*)Va(kAimV), (unsigned)model, (unsigned)layer,
+                     (unsigned)c[2], (unsigned)c[3], (unsigned)c[4], table ? (unsigned)MotionAt(table, 0x8C) : 0u,
+                     table ? (unsigned)MotionAt(table, 0x20C) : 0u, table ? (unsigned)MotionAt(table, 0x214) : 0u,
+                     CenteredView() ? 1 : 0, PlayerPtr() ? At<uint8_t>(PlayerPtr(), pl::RNo0 + 1) : 0,
+                     PlayerPtr() ? At<uint8_t>(PlayerPtr(), pl::RNo0 + 2) : 0, PlayerPtr() ? At<uint8_t>(PlayerPtr(), pl::RNo0 + 3) : 0);
     if (layer >= 0x10000 && Readable((void*)(layer + 0xA0), 0x40))
         for (int i = 0; i < 16; ++i) k += snprintf(b + k, sizeof b - k, " %.2f", ((float*)(layer + 0xA0))[i]);
     Log("%s", b);
@@ -377,26 +505,38 @@ static void __cdecl HookSway(uintptr_t pl, uint32_t mode, float* v, float* side)
     uintptr_t sw = 0;
     const bool on = CenteredView() && pl && pl == *(uintptr_t*)Va(kPlayerPtr) && Readable((void*)(pl + 0x7D8), 4) &&
                     (sw = *(uintptr_t*)(pl + 0x7D8)) >= 0x10000 && Readable((void*)sw, 0x30);
+    if (GetTickCount() - g_swayTick > 100) g_outValid = false;  // a new aim: the game set its values afresh
+    g_swayTick = GetTickCount();
+    if (on && g_outValid) *v = g_gameV + (*v - g_outV);
     g_origSway(pl, mode, v, side);
     if (!on) {
-        g_haveAnchor = false, g_pitchMove = 0.0f;
+        g_haveAnchor = false, g_pitchMove = 0.0f, g_outValid = false;
         return;
     }
     if (!g_haveAnchor) g_anchorBack = true;
-    if ((int)(g_setPitchUntil - GetTickCount()) > 0) {
-        // The arm's pose follows kAimVStart, eased toward the aim by kAimVBlend: set both, so it doesn't ease over.
-        float* start = (float*)Va(kAimVStart);
-        if (fabsf(*start * 90.0f - g_setPitch * 57.3f) > 1.0f)
-            Log("diag aim pose: start %.1f deg -> %.1f, blend %.2f", *start * 90.0f, g_setPitch * 57.3f,
-                *(float*)Va(kAimVBlend));
+    const bool window = (int)(g_setPitchUntil - GetTickCount()) > 0;
+    if (window) {
         *(float*)(sw + 0x28) = g_setPitch;
-        *(float*)Va(kAimV) = *start = g_setPitch * 0.63661977f;
         g_lastAnchor = g_setPitch, g_haveAnchor = true;
     }
     const float a = At<float>(sw, 0x28);
     if (g_haveAnchor) g_pitchMove += a - g_lastAnchor;
     g_lastAnchor = a, g_haveAnchor = true;
-    *v = a * 0.63661977f, *side = At<float>(sw, 0x2C);  // back to the anchor: no drift, no kick
+    g_viewPitch = a;
+    // The game's own aim: back to the anchor (no drift, no kick). The gun's: on the point under the reticle.
+    g_gameV = a * 0.63661977f;
+    const float outV = ArmV(a);
+    *v = g_outV = outV;
+    g_outValid = true;
+    // Sideways back to the anchor too: the sway's sideways part shook the gun and the view, which follows this value
+    // (dropped by mistake in the 10-29 redesign).
+    *side = At<float>(sw, 0x2C);
+    // The arm's pose follows kAimVStart, eased toward the aim by kAimVBlend: at the aim start it goes there at once.
+    if (window) *(float*)Va(kAimVStart) = outV;
+}
+// The aim's sideways value (cPlayer+0x448), for the view.
+float AimViewSide(uintptr_t pl) {
+    return At<float>(pl, 0x448);
 }
 
 // The laser's red dot (kFnLaserDot, position in ESI): skipped while the centered aim runs.
