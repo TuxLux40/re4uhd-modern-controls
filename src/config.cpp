@@ -58,8 +58,8 @@ void LoadConfig() {
     c.legsKnee = ReadFloat(path, "Aim", "LegsKnee", 0.8f);
     c.aimWalkSpeed = ReadFloat(path, "Aim", "WalkSpeed", 1300.0f);
     c.reloadSpeed = ReadFloat(path, "Aim", "ReloadSpeed", 1700.0f);
-    c.crosshair = ReadFloat(path, "Aim", "Crosshair", 1.0f) != 0.0f;
-    c.centeredAim = ReadFloat(path, "Aim", "CenteredAim", 1.0f) != 0.0f;
+    c.crosshair = ReadFloat(path, "Aim", "Crosshair", 0.0f) != 0.0f;
+    c.centeredAim = ReadFloat(path, "Aim", "CenteredAim", 0.0f) != 0.0f;
     c.centerDot = ReadFloat(path, "Aim", "CenterDot", 1.0f) != 0.0f;
     c.hideActionPrompt = ReadFloat(path, "Buttons", "HideActionPrompt", 1.0f) != 0.0f;
     c.autoQte = ReadFloat(path, "Buttons", "AutoQTE", 1.0f) != 0.0f;

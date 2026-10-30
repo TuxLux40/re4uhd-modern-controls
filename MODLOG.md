@@ -68,9 +68,15 @@ See `docs/RE-NOTES.md` (globals, camera, trace, laser) and `docs/mechanics/aim.m
 - Redesign test: sway shake back (sideways anchor dropped by mistake), floor aim swinging, sideways jump at aim start
   (feedback loop), first raise snapping down. Fixed: sway anchor restored, feedback loop removed, handgun raise from
   the weapon table (the game's modern-mouse-aim motions). oliver: "looks good", saved as a milestone.
+- Shotgun 26 deg off and SMG snapping with the shoulder camera; the game's own aim camera with a centred reticle
+  then showed the gun 6 deg right / 10 deg above the centre: the original never centres its laser. Quick aims also
+  turned Leon ~3 deg further each time (aim-end handback, fixed).
+- oliver: crosshair work moved to the `beta` branch (12bf750, `ShoulderAim` switch there); `main` is back to the
+  original aim camera, laser and red dot (`CenteredAim=0`, `Crosshair=0` by default) with the free camera and modern
+  movement. He only wanted the tank controls gone; aiming itself was never the problem.
 
 ## Next
-1. Laser above the reticle when aiming far up/down (aim.md "Open questions").
+1. Beta: decide how the gun meets a centred reticle (one camera offset per aim, measured at rest, was proposed).
 2. Static raise motions for the other weapon families; then drop the learnt table and the unused convergence code
    (`g_convYaw`/`g_convV`, AimConvYaw, gun-point easing).
 3. Trim the diag logging (`diag pose`, `diag gun`).

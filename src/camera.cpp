@@ -73,6 +73,7 @@ static bool g_wasAiming = false;
 // The centered aim hands its view back to the free camera when it ends: the free camera's heading and tilt when the
 // aim started, the aim view's offset from that heading then, and the aim view's heading and tilt now.
 static float g_aimFreeYaw = 0.0f, g_aimFreePitch = 0.0f, g_aimPitch0 = 0.0f;
+static float g_aimLeonYaw0 = 0.0f;  // Leon's heading right after the aim start turned him
 static float g_aimViewYaw = 0.0f, g_aimViewPitch = 0.0f;
 static bool g_aimHandBack = false;
 // The view's direction right after the aim start, and the turns the point lock made on its own (not the stick): the
@@ -411,6 +412,7 @@ static void __fastcall HookQfpsMoveBody(uintptr_t self, void* edx) {
             // Turn Leon so the aim starts where the free camera looked.
             float* ang = (float*)(pl + pl::Ang);
             ang[1] = WrapPi(ang[1] + WrapPi(g_yaw - gameYaw));
+            g_aimLeonYaw0 = ang[1];
             Log("cam: aim start, leon yaw -> %.3f", ang[1]);
         }
         g_wasAiming = true;
@@ -480,7 +482,13 @@ static void __fastcall HookQfpsMoveBody(uintptr_t self, void* edx) {
         g_modBlend = 1.0f;
         Log("cam: aim end, free camera yaw %.3f pitch %.1f", g_yaw, g_pitch * 57.3f);
     } else if (g_wasAiming) {
+        // The game's aim camera: the free camera comes back where it was, turned by however far the aim turned Leon.
+        // Taking over the aim camera's own direction drifted: it looks a few degrees beside his heading, and each quick
+        // aim turned him that much further (log 2026-10-30: -0.05 rad per aim).
+        const float turned = WrapPi(At<float>(pl, pl::Ang + 4) - g_aimLeonYaw0);
+        g_yaw = WrapPi(g_aimFreeYaw + turned);
         g_pitch = cfg.defaultPitch;
+        Log("cam: aim end, free camera yaw %.3f (leon turned %+.1f deg)", g_yaw, turned * 57.3f);
     }
     if (g_wasAiming) g_back = -2.0f;  // glide out from the aim's distance
     g_wasAiming = false;

@@ -104,7 +104,7 @@ function Get-Current($key, $default) {
     }
     return $default
 }
-$run = Get-Current "Run" "Always"; $walk = Get-Current "Walk" "1"; $cross = Get-Current "Crosshair" "1"; $ashley = Get-Current "ProtectAshley" "1"
+$run = Get-Current "Run" "Always"; $walk = Get-Current "Walk" "1"; $cross = Get-Current "Crosshair" "0"; $ashley = Get-Current "ProtectAshley" "1"
 $height = Get-Current "Height" "0"; $invy = Get-Current "InvertY" "0"
 
 function Ask-Choice($question, $default, [string[]]$options) {
@@ -146,7 +146,7 @@ $text = (Get-Content $IniTemplate -Raw) -replace "\r\n", "`n"
 function Set-Key($key, $value) { $script:text = [regex]::Replace($script:text, "(?m)^;?$key=.*$", "$key=$value") }
 if ($run -ne "Always") { Set-Key "Run" $run }
 if ($walk -ne "1") { Set-Key "Walk" $walk }
-if ($cross -ne "1") { Set-Key "Crosshair" $cross }
+if ($cross -ne "0") { Set-Key "Crosshair" $cross }
 if ($ashley -ne "1") { Set-Key "ProtectAshley" $ashley }
 if ($height -ne "0") { Set-Key "Height" $height }
 if ($invy -ne "0") { Set-Key "InvertY" $invy }

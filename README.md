@@ -27,7 +27,7 @@ No more tank controls: move where you push the stick, look around freely, walk w
 | 🎯 **Aim where you look** | Raise the gun and the view keeps looking where it looked while the camera moves in close over Leon's right shoulder, like RE5. Leon turns to aim there. Aim with the right stick. `KeepViewOnAim=0` swings the view to where Leon looks instead. |
 | 🔫 **Weapon quick select on the d-pad** | Like the remake: up handguns, right shotguns, down rifles, machine guns and launchers, left grenades. Press a direction again for the next weapon of that kind you carry. The lists are in the ini; `DpadSelect=0` gives the d-pad back to the original tank controls. |
 | 🚶 **Walk while aiming** | Move with the left stick while aiming. RE4 has no strafe animations, so the mod puts a walk cycle on Leon's legs while his arms keep the aim (`Legs=0` turns it off and he glides). |
-| ➕ **Remake-style crosshair** | A reticle in the middle of the screen, and your shots and the laser go there. The camera follows your aim, never the gun, so recoil doesn't shake the view. The original aim sway is gone. Instead the ticks open up while you walk, turn or fire and close again when you hold still, and shots land anywhere inside them. The laser is just a beam now, without its red dot. `CenteredAim=0` brings back the original camera, sway and laser, with the reticle following the laser. |
+| 🧪 **Remake-style crosshair** (beta branch) | A fixed reticle in the middle of the screen with remake-style spread, shots going there. Still in the works on the `beta` branch: the original aim camera never points the gun at the screen's centre. The main build keeps the original laser and red dot; `Crosshair=1` adds a crosshair where the laser points. |
 | 🔴 **Target indicator** | The centre dot turns red and grows while it rests on something that takes damage (enemies, lamps, barrels). Outside of aiming a small dot marks the middle of the screen (`CenterDot=0` hides it). |
 | 🎒 **Quick item pickup** | A takes the everyday pickups straight away, like the remakes: ammo, grenades, herbs, eggs and fish, the small stones (Spinel, Velvet Blue) and money come without the dark pickup screen, the "Will you take it?" and the Yes/No. When it doesn't fit, the case opens to make room, as always. Weapons, key items, the bigger treasures and other important finds keep their screen (`QuickPickup=0` brings it back for everything). |
 | 📜 **Pickup log** | A few lines on the right, above the HUD, say what you just took, like the newer Resident Evil games: the name and the count ("Handgun Ammo x30", "5000 PTAS") with a small icon after it. Each item shows a small picture of itself (`assets/icons`, built into the DLL). They slide in and fade out after a few seconds (`PickupTicker=0` hides them). |
@@ -169,7 +169,7 @@ either way, so this table can grow.
 - [ ] Ada and the other Mercenaries characters: the legs while aiming and reloading on the move only know Leon's
   skeleton, so Ada (Separate Ways, Assignment Ada) and the Mercenaries characters need their own bone mapping
 - [ ] Sort the case automatically, like the remakes (a button in the open case)
-- [ ] Leon's gun pointing exactly at the reticle (the laser bends toward it for now)
+- [ ] Remake-style centred crosshair (on the `beta` branch): the gun has to point at the screen's centre first
 - [x] Remake-style weapon quick select on the d-pad
 - [x] Reload on the move: the legs play Leon's own walk under the reload, at his walking speed
 - [ ] Calibrate the legs on the move: the step at the end of a reload still jumps a little (mostly the right leg),
@@ -195,8 +195,6 @@ either way, so this table can grow.
 
 - The shoulder distances (`ShoulderRight`, `ShoulderBack`, `ShoulderHeight`, `Shoulder`) are first guesses;
   they can be changed in the ini while the game runs.
-- Leon's gun doesn't always point exactly at the reticle, so the laser leaves the gun at a slight angle. Shots
-  still go to the reticle.
 - Reloading on the move: Leon's legs walk, but where the reload ends and he walks or runs on, his legs still jump a
   little (mostly the right leg). Firing from the hip on the move: Leon slows down and glides, without the walk on his
   legs.
