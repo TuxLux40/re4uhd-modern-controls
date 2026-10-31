@@ -134,6 +134,7 @@ constexpr uint32_t CameraPoint = 0xA4;  // CAMERA::CamPoint_A4 inside any CAMERA
 // GLOBAL_WK
 namespace g {
 constexpr uint32_t DeltaTime = 0x70;  // float, 1.0 = one 30 fps frame
+constexpr uint32_t Gold = 0x4FA8;      // int, the pesetas the player has (re4_tweaks goldAmount_4FA8)
 }  // namespace g
 
 }  // namespace re4

@@ -16,6 +16,7 @@
 #include "common.h"
 #include "config.h"
 #include "item_names.h"
+#include "re4.h"
 #include <string.h>
 
 static const uint32_t kThunkMesSet = 0x0000E7A5;    // jmp MesSet 0x00718DE0
@@ -34,6 +35,14 @@ static const uint32_t kFnItemInfo = 0x003057D0;  // cdecl (id, ITEM_INFO*), type
 static const uint32_t kFnSndCall = 0x0056E230;   // cdecl SndCall(blk, no, pos, id, flag, model)
 
 static uint16_t g_pickItem = 0, g_pickNum = 0;  // the item being picked up and its count (+0x7C)
+// Money is added before the message, but the count isn't the amount: the gold routine 0x00707A80 adds count x10
+// (Treasure Box S), x100 (Box L) or x1000 (Gold Bar), and a fixed 300/3000/5000 when the count is 0. The ticker
+// shows what the balance really went up by, the way the game's own money popup does (0x006BC3E0 compares it too).
+static int g_pickGold = 0;
+static int Gold() {
+    const uintptr_t g = *(uintptr_t*)Va(re4::kGlobalPtr);
+    return (g && Readable((void*)(g + re4::g::Gold), 4)) ? At<int>(g, re4::g::Gold) : 0;
+}
 
 void TickerItem(uint32_t id, uint32_t num, uint8_t type, const char* name);
 static const char* ItemName(uint32_t id) {
@@ -69,7 +78,9 @@ extern "C" int __cdecl PickupMessage(uint32_t flags) {
         g_pickupYes = 1;
         *g_pickupAnswer = 1;
     } else {
-        Announce(g_pickItem, g_pickNum, t);
+        const int gained = Gold() - g_pickGold;
+        Announce(g_pickItem, t == 8 && gained > 0 ? (uint32_t)gained : g_pickNum, t);
+        if (t == 8) Log("pickup: money item %u count %u, balance +%d", g_pickItem, g_pickNum, gained);
     }
     return 0;
 }
@@ -122,6 +133,7 @@ static uint32_t __cdecl HookPickupStart(uintptr_t entry) {
     const bool ok = Readable((void*)(entry + 0x78), 6);
     g_pickItem = ok ? At<uint16_t>(entry, 0x78) : 0;
     g_pickNum = ok ? At<uint16_t>(entry, 0x7C) : 0;
+    g_pickGold = Gold();
     return g_origPickupStart(entry);
 }
 static const uint8_t kSigPickupStart[] = {0x55, 0x8B, 0xEC, 0x56, 0x8B, 0x75, 0x08};
